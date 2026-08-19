@@ -5,3 +5,4 @@
 # ---------------------------------------------------------------------------
 
 add_subdirectory(chapter01_hello_torch)
+add_subdirectory(chapter02_text_data)

@@ -10,7 +10,8 @@
 
 * xref:prerequisites.adoc[环境准备]
 * xref:chapter01_hello_torch:index.adoc[第 1 章 Hello LibTorch：张量基础]
-*（更多章节敬请期待：词表与 Tokenizer、嵌入层、Transformer 模块、训练循环……）*
+* xref:chapter02_text_data:index.adoc[第 2 章 处理文本数据]
+*（更多章节敬请期待：嵌入层、Transformer 模块、训练循环……）*
 
 == 技术栈
 

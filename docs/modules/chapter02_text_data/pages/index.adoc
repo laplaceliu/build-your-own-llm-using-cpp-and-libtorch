@@ -1,0 +1,183 @@
+= 第 2 章 处理文本数据
+
+本章用 C++ 和 LibTorch 实现为大语言模型准备输入文本的完整流水线，对应代码位于
+`chapters/chapter02_text_data/`，中间每一步的结果都会打印出来，便于对照书中输出验证。
+
+对应书中章节：2.2 文本分词 → 2.3 词元转 ID → 2.4 特殊词元 → 2.5 BPE →
+2.6 滑动窗口采样 → 2.7 词元嵌入 → 2.8 位置嵌入。
+
+== 2.2 文本分词
+
+`SimpleTokenizerV1` 使用正则 `([,.?_!"()']|--|\s)` 分割文本，等价于书中 Python 的
+`re.split`，并过滤空白与空串。
+
+* 短篇小说《The Verdict》共 *20479* 个字符，分词后得到 *4690* 个词元（与书中一致）。
+* 前 30 个词元：`['I', 'HAD', 'always', 'thought', 'Jack', 'Gisburn', ...]`
+
+关键点：C++ 用 `std::regex` 的 `sregex_iterator` 复刻 `re.split` 保留捕获组的行为，
+`split_tokens` 返回分隔符与文本段交替的列表后再过滤空白。
+
+== 2.3 词元 -> 词元 ID
+
+对 4690 个词元取 `std::set`（去重 + 按字典序排序，等价于 Python 的 `sorted(set(...))`），
+得到词汇表 *1130* 项。`SimpleTokenizerV1` 维护 `str_to_int` 与 `int_to_str` 双向映射：
+
+* `encode(text)` 查表把词元映射为 ID
+* `decode(ids)` 先以空格连接，再用正则 `\s+([,.:;?_!"()'])` 移除标点前的空格
+
+验证输出（与书中完全一致）：
+
+[source,text]
+----
+encode(text) = [1, 56, 2, 850, 988, 602, 533, 746, 5, 1126, 596, 5, 1, 67, 7,
+                38, 851, 1108, 754, 793, 7]
+decode(ids) = " It' s the last he painted, you know," Mrs. Gisburn said with
+              pardonable pride.
+----
+
+== 2.4 特殊上下文词元
+
+追加 `<|endoftext|>`（1130）与 `<|unk|>`（1131）后词汇表变为 *1132*。
+`SimpleTokenizerV2` 遇到词汇表中不存在的词时替换为 `<|unk|>`。
+
+[source,text]
+----
+text = "Hello, do you like tea? <|endoftext|> In the sunlit terraces of the palace."
+encode(text) = [1131, 5, 355, 1126, 628, 975, 10, 1130, 55, 988, 956, 984, 722, 988, 1131, 7]
+decode(encode(text)) = "<|unk|>, do you like tea? <|endoftext|> In the sunlit terraces of the <|unk|>."
+----
+
+== 2.5 BPE（GPT-2 字节级字节对编码）
+
+书中使用 Python 的 tiktoken 库；本工程提供两版实现，均输出可观测：
+
+=== 2.5a 从零实现（`BpeTokenizer`）
+
+用 C++ 从零实现了等价的 GPT-2 BPE 分词器（`BpeTokenizer`），数据文件：
+
+* `data/encoder.json` —— token -> id（等价于 tiktoken gpt2，来自 HF gpt2 的 `vocab.json`）
+* `data/vocab.bpe` —— merge 规则，行号即 rank（等价于 HF gpt2 的 `merges.txt`）
+
+实现要点：
+
+* `bytes_to_unicode`：把 0-255 字节映射为可打印字符（空格映射为 `Ġ`）
+* 单词切分正则：`'s|'t|'re|'ve|'m|'ll|'d| ?[A-Za-z]+| ?[0-9]+| ?[^\sA-Za-z0-9]+|\s+(?!\S)|\s+`
+  （tiktoken gpt2 正则的 ASCII 近似，英文文本结果一致）
+* 单词内贪心 merge：每轮找到 rank 最小的相邻对并合并所有出现，直到无可合并
+
+=== 2.5b 使用 torchtext 官方 `GPT2BPEEncoder`
+
+torchtext（PyTorch 文本库）提供了 GPT-2 BPE 分词器的官方 C++ 实现
+`torch::text::GPT2BPEEncoder`。由于预编译 LibTorch 不含该组件，本工程把
+官方源码（来自 pytorch/text 的 `torchtext/csrc/`）放入
+`third_party/torchtext/` 一起编译，并封装了工厂函数 `load_gpt2_bpe`
+（见 `include/torchtext_gpt2_bpe.h`）：
+
+* 加载 `encoder.json` / `vocab.bpe` 构建 `bpe_encoder` 与 `bpe_merge_ranks`
+* 按 openai 算法生成 `byte_encoder`（bytes_to_unicode）
+* 构造 `GPT2BPEEncoder(bpe_encoder, bpe_merge_ranks, "\x01", byte_encoder, true)`
+
+依赖：官方实现的正则预分词基于 RE2（`third_party/torchtext/regex.*`），
+需要 `libre2-dev`（`sudo apt-get install libre2-dev`）。
+
+=== 两版输出对照
+
+普通文本（无特殊词元）两版**完全一致**（15 个 token）：
+
+[source,text]
+----
+text = "The sunlit terraces of the palace. Akwirw ier"
+torchtext encode: [464, 4252, 18250, 8812, 2114, 286, 262, 20562, 13, 9084, 86, 343, 86, 220, 959]
+手写版 encode:   [464, 4252, 18250, 8812, 2114, 286, 262, 20562, 13, 9084, 86, 343, 86, 220, 959]
+结果一致: yes
+----
+
+书中 2.5 节的例子（含 `<|endoftext|>`），tiktoken 输出（书中预期）：
+
+[source,text]
+----
+encode("Hello, do you like tea? <|endoftext|> In the sunlit terraces of someunknownPlace.")
+= [15496, 11, 466, 345, 588, 8887, 30, 220, 50256, 554, 262, 4252, 18250, 8812,
+   2114, 286, 617, 34680, 27271, 13]
+----
+
+torchtext 版输出（特殊词元 `AddSpecialTokens` 注册后）：
+
+[source,text]
+----
+encode(text) = [15496, 11, 466, 345, 588, 8887, 30, 50256, 818, 262, 4252, ...]
+----
+
+两版在**特殊词元周围空格**的处理上存在约定差异：torchtext 会吞掉 `<|endoftext|>`
+两侧的空格（`In` 前不再有独立空格 token，变为 `ĠIn`=818），而 tiktoken 会把空格
+单独编码为 `Ġ`(220)。这与 BPE 核心算法无关——普通文本两版逐 token 一致，
+`the-verdict.txt` 全文两版都是 *5145* 个 token。
+
+练习 2.1：未知单词 `Akwirw ier` 被分解为 `Ak / w / ir / w / ' ' / ier`（6 个 token），
+无须 `<|unk|>` 即可覆盖任意单词（两版结果一致）。
+
+== 2.6 滑动窗口数据采样
+
+`GPTDataLoader` 等价于书中 `GPTDatasetV1` + `DataLoader`：
+
+* 输入块 `token_ids[i : i+max_length]`，目标块右移一位 `token_ids[i+1 : i+max_length+1]`
+* `stride` 控制窗口步进；`drop_last` 丢弃不足一个 batch 的尾部
+
+验证输出（与书中完全一致）：
+
+[source,text]
+----
+BPE 分词后词元总数 len(enc_text) = 5145
+x = [290, 4920, 2241, 287]      y = [4920, 2241, 287, 257]
+[290] ----> 4920
+[290, 4920] ----> 2241
+[290, 4920, 2241] ----> 287
+[290, 4920, 2241, 287] ----> 257
+
+batch_size=8, max_length=4, stride=4 的第一个 batch:
+Inputs (8x4):
+ 40   367  2885  1464
+ 1807 3619   402   271
+ ...
+----
+
+== 2.7 创建词元嵌入
+
+使用 LibTorch 的 `torch::nn::Embedding` 实现查找表。设置 `torch::manual_seed(123)`
+后，权重与书中 Python 输出完全一致（CPU 上 C++ 与 Python 前端共享相同的 RNG）：
+
+[source,text]
+----
+embedding_layer.weight（6x3）:
+ 0.3374 -0.1778 -0.1690
+ 0.9178  1.5810  1.3010
+ ...
+embedding(tensor([3])) = [-0.4015,  0.9666, -1.1481]   # 权重矩阵第 4 行
+----
+
+== 2.8 编码单词位置信息
+
+* 词元嵌入：`torch::nn::Embedding(50257, 256)`，输入 `[8, 4]` → 输出 `[8, 4, 256]`
+* 位置嵌入：`torch::nn::Embedding(4, 256)`，输入 `torch::arange(4)` → 输出 `[4, 256]`
+* 相加得到模型输入：`input_embeddings = token_embeddings + pos_embeddings` → `[8, 4, 256]`
+
+== 编译与运行
+
+[source,shell]
+----
+cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/g++-11 \
+      -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc
+cmake --build build --target chapter02_text_data -j$(nproc)
+LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
+  ./build/chapters/chapter02_text_data/chapter02_text_data
+----
+
+数据文件（`data/`）已随仓库提交；如需重新下载：
+
+[source,shell]
+----
+curl -fsSL -o data/the-verdict.txt \
+  https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch02/01_main-chapter-code/the-verdict.txt
+curl -fsSL -L -o data/encoder.json https://huggingface.co/gpt2/resolve/main/vocab.json
+curl -fsSL -L -o data/vocab.bpe    https://huggingface.co/gpt2/resolve/main/merges.txt
+----

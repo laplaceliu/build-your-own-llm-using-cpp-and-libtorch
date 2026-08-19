@@ -1,3 +1,4 @@
 * xref:index.adoc[首页]
 * xref:prerequisites.adoc[环境准备]
 * xref:chapter01_hello_torch:index.adoc[第 1 章 Hello LibTorch]
+* xref:chapter02_text_data:index.adoc[第 2 章 处理文本数据]
