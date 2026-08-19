@@ -1,0 +1,166 @@
+= 第 5 章 在无标签数据上进行预训练
+
+本章用 C++ + LibTorch 实现 GPT 模型的评估、预训练、解码策略与权重加载，
+对应代码位于 `chapters/chapter05_pretraining/`。
+
+* `include/training.h` —— 损失/评估/训练循环/generate 解码函数
+* `include/dataloader.h` —— 第 2 章滑动窗口数据加载器（复用）
+* `include/safetensors.h` + `src/safetensors.cpp` —— safetensors 权重解析器
+* `src/main.cpp` —— 5.1~5.5 逐步演示
+
+== 5.1 评估文本生成模型
+
+=== 5.1.1 使用 GPT 生成文本
+
+`context_length` 改为 256（降低训练开销），`manual_seed(123)` 初始化，贪心生成 10 词元：
+
+[source,text]
+----
+Output text:
+ Every effort moves you rentingetic wasnم refres RexMeCHicular stren
+----
+
+与 Python tiktoken + torch 2.11 输出逐 token 一致（书 PDF 中 `wasn?` 的 `?` 是
+字符渲染问题，实际为 U+0645）。
+
+=== 5.1.2 计算文本生成损失
+
+逐步演示交叉熵损失的 6 步（与书一致）：
+
+[source,text]
+----
+probas.shape = [2, 3, 50257]
+Text 1: [7.4541e-05, 3.1061e-05, 1.1563e-05]   # 目标词元的 softmax 概率
+log_probas  = [-9.5042, -10.3796, -11.3677, -11.4798, -9.7764, -12.2561]
+avg_log_probas = -10.7940
+Loss (cross_entropy): 10.7940
+Perplexity: 48725.82
+----
+
+=== 5.1.3 计算训练集和验证集的损失
+
+The Verdict 按字符 90/10 切分，`create_dataloader_v1`（batch=2, max_length=256, stride=256）：
+
+[source,text]
+----
+Characters: 20479, Tokens: 5145
+Train loader: 9 个批次 [2, 256]，Validation loader: 1 个批次 [2, 256]
+Training loss: 10.9876      # 书 10.98758347829183
+Validation loss: 10.9811    # 书 10.98110580444336
+----
+
+与书**完全一致**（模型未训练，损失约 ln(50257)≈10.8）。
+
+== 5.2 训练大语言模型
+
+AdamW（lr=0.0004, weight_decay=0.1），10 轮，eval_freq=5, eval_iter=5。
+训练日志（本机 CPU 24 线程，约 8 分钟）：
+
+[source,text]
+----
+Ep 1 (Step 0): Train loss 9.712, Val loss 10.02      # 书 9.781/9.933
+Ep 1 (Step 5): Train loss 7.879, Val loss 8.233      # 书 8.111/8.339
+Ep 2 (Step 15): Train loss 5.807, Val loss 6.571     # 书 5.961/6.616
+...
+Ep 9 (Step 85): Train loss 0.648, Val loss 6.292
+Ep 10 (Step 85): Train loss 0.460, Val loss 6.469    # 书 0.391/6.452
+Every effort moves you?" "Yes--quite insensible to the irony. She wanted
+him vindicated--and by me!" He laughed again, and threw back his head to
+look up at the sketch of the donkey. "There were days when I
+----
+
+第 9 轮起生成文本与书高度一致（"Yes--quite insensible to the irony..."）。
+损失数值与书略有差异，原因是 C++ 用 `std::mt19937` 实现 shuffle 而 Python 用
+torch 的 RNG，批次顺序不同；但收敛趋势、过拟合现象（train 降到 0.4、val 停在 6.4）
+与书完全一致。
+
+== 5.3 控制随机性的解码策略
+
+=== 5.3.1 温度缩放
+
+小词汇表示例（9 词元），`multinomial` 采样 1000 次（seed 123）分布与书**完全一致**：
+
+[source,text]
+----
+73 x closer, 0 x every, 0 x effort, 582 x forward, 2 x inches,
+0 x moves, 0 x pizza, 343 x toward, 0 x you
+T=1   -> forward 概率 0.57212    # 书 ~0.6
+T=0.1 -> forward 概率 0.99099    # 接近 argmax
+----
+
+=== 5.3.2 Top-k 采样
+
+`topk` + `torch::where` 掩码 + softmax，与书完全一致：
+
+[source,text]
+----
+Top logits: [6.75, 6.28, 4.51], Top positions: [3, 7, 0]
+new_logits: [4.51, -inf, -inf, 6.75, -inf, -inf, -inf, 6.28, -inf]
+topk_probas: [0.0615, 0, 0, 0.5775, 0, 0, 0, 0.3610, 0]
+----
+
+=== 5.3.3 修改后的 generate 函数
+
+`temperature + top_k + eos_id + multinomial`。训练后模型 + top_k=25, temperature=1.4
+生成文本与书不同（书 "stand to work on surprise..."，本实现 "in the picture down..."）
+——因为温度采样本身带随机性，且训练权重因 shuffle RNG 略有差异，属于正常现象。
+
+== 5.4 使用 PyTorch 保存和加载模型权重
+
+`torch::save(model, "model.pth")` / `torch::load(model2, path)` 保存/恢复整个模型
+（等价 state_dict）：
+
+[source,text]
+----
+已保存模型权重到 .../data/model.pth（622.744 MB）
+加载后生成与训练模型一致: yes
+----
+
+*练习 5.4*：书中同时保存优化器状态（AdamW 动量）以续训；C++ API 无对应接口，
+需要自行序列化优化器状态。
+
+== 5.5 从 OpenAI 加载预训练权重
+
+书中用 TensorFlow 解析 OpenAI 的 checkpoint；本实现改为 C++ 直接解析 HuggingFace
+`safetensors`（`gpt2` 模型，权重与 OpenAI 相同，`~548 MB`），键名映射到书中
+`params` 结构后，加载逻辑与代码清单 5-5 完全一致：
+
+* 下载：`curl -fsSL -L -o data/gpt2-model.hf.safetensors https://hf-mirror.com/gpt2/resolve/main/model.safetensors`
+  （或 huggingface.co；`attn.bias` 掩码 buffer 跳过）
+* 加载：`gpt2-model.hf.safetensors` 传给第 3 个命令行参数
+* 配置：`context_length=1024, qkv_bias=True`（与 OpenAI 一致）
+* `c_attn.w [768,2304]` 按最后一维 split 成 q/k/v（书 `np.split(axis=-1)`）再转置
+
+生成文本（top_k=50, temperature=1.5, seed 123）与书**逐字一致**：
+
+[source,text]
+----
+Output text:
+ Every effort moves you toward finding an ideal new way to practice something!
+ What makes us want to be on top of that?
+----
+
+== 编译与运行
+
+[source,shell]
+----
+cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/g++-11 \
+      -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc
+cmake --build build --target chapter05_pretraining -j$(nproc)
+
+# 完整运行（10 轮预训练，CPU 约 8 分钟）
+LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
+  ./build/chapters/chapter05_pretraining/chapter05_pretraining
+
+# 跳过训练、指定 OpenAI 权重文件
+LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
+  ./build/chapters/chapter05_pretraining/chapter05_pretraining <data_dir> 0 <safetensors>
+----
+
+== 移植要点
+
+* **in-place 赋值**：给 requires_grad 的叶子参数赋值须在 `NoGradGuard` 下
+  `copy_`（等价 Python `with torch.no_grad()`）。
+* **shuffle RNG**：C++ 与 Python 的 DataLoader shuffle 序列不同 → 训练损失
+  曲线有微小差异（趋势一致）。
+* **温度采样**：`generate` 用 `torch::multinomial`，随机性使生成文本不可逐字复现。

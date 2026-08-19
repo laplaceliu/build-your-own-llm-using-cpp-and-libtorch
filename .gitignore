@@ -19,3 +19,8 @@ docs/public/
 
 # ---- 图书原始 PDF（版权材料，不入库）----
 pdf/
+
+# ---- 大模型权重与训练检查点（数百 MB，不入库）----
+**/gpt2-model*.safetensors
+**/model.pth
+**/model_and_optimizer.pth

@@ -24,10 +24,14 @@
 │   │   ├── CMakeLists.txt
 │   │   ├── include/          # attention.h（SelfAttention/CausalAttention/MultiHeadAttention）
 │   │   └── src/              # main.cpp
-│   └── chapter04_gpt/
+│   ├── chapter04_gpt/
+│   │   ├── CMakeLists.txt
+│   │   ├── include/          # gpt.h（LayerNorm/GELU/FeedForward/TransformerBlock/GPTModel）
+│   │   └── src/              # main.cpp（依赖第 2/3 章 tokenizer 与注意力）
+│   └── chapter05_pretraining/
 │       ├── CMakeLists.txt
-│       ├── include/          # gpt.h（LayerNorm/GELU/FeedForward/TransformerBlock/GPTModel）
-│       └── src/              # main.cpp（依赖第 2/3 章 tokenizer 与注意力）
+│       ├── include/          # training.h / dataloader.h / safetensors.h
+│       └── src/              # main.cpp（预训练 + 解码策略 + OpenAI 权重加载）
 └── docs/                     # Antora 文档项目（playbook + 组件 + 模块）
     ├── playbook.yml          # 站点 playbook
     ├── antora.yml            # 组件描述
@@ -37,7 +41,8 @@
         ├── chapter01_hello_torch/   # 按章命名 module
         ├── chapter02_text_data/
         ├── chapter03_attention/
-        └── chapter04_gpt/
+        ├── chapter04_gpt/
+        └── chapter05_pretraining/
 ```
 
 ## 环境要求
@@ -102,7 +107,7 @@ curl -fsSL -o docs/ui/ui-bundle.zip \
 - [x] 第 2 章 处理文本数据（分词 / BPE / 滑动窗口 / 嵌入）
 - [x] 第 3 章 编码注意力机制（自注意力 / 因果注意力 / 多头注意力）
 - [x] 第 4 章 从头实现 GPT 模型（1.24 亿参数 GPT-2 small + 文本生成）
-- [ ] 第 5 章 预训练
+- [x] 第 5 章 预训练（损失评估 / AdamW 训练 / 温度与 Top-k 解码 / 加载 OpenAI 权重）
 - [ ] 第 6 章 分类微调
 - [ ] 第 7 章 指令微调
 - [ ] 更多敬请期待……

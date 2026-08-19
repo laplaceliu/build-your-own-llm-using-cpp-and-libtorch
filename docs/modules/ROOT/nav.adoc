@@ -4,3 +4,4 @@
 * xref:chapter02_text_data:index.adoc[第 2 章 处理文本数据]
 * xref:chapter03_attention:index.adoc[第 3 章 编码注意力机制]
 * xref:chapter04_gpt:index.adoc[第 4 章 从头实现 GPT 模型进行文本生成]
+* xref:chapter05_pretraining:index.adoc[第 5 章 在无标签数据上进行预训练]
