@@ -155,6 +155,12 @@ public:
     }
 
     torch::Tensor forward(torch::Tensor in_idx) {
+        return out_head->forward(forward_hidden(in_idx));
+    }
+
+    // 返回 final_norm 之后的隐藏表示 [batch, seq, emb_dim]
+    // （供第 6 章分类微调等任务替换输出层使用）
+    torch::Tensor forward_hidden(torch::Tensor in_idx) {
         const int64_t batch_size = in_idx.size(0);
         const int64_t seq_len = in_idx.size(1);
 
@@ -166,8 +172,7 @@ public:
         x = drop_emb->forward(x);
         x = trf_blocks->forward(x);
         x = final_norm->forward(x);
-        auto logits = out_head->forward(x);
-        return logits;
+        return x;
     }
 
     torch::nn::Embedding tok_emb{nullptr};

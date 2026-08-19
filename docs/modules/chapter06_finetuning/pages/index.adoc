@@ -1,0 +1,138 @@
+= 第 6 章 针对分类的微调
+
+本章用 C++ + LibTorch 把预训练 GPT-2 微调为垃圾消息（spam）二分类器，
+对应代码位于 `chapters/chapter06_finetuning/`。支持 **GPU（RTX 4080）** 加速。
+
+* `include/finetuning.h` —— 数据集准备 / SpamDataset / GPTClassifier / 评估/训练/分类函数
+* `src/main.cpp` —— 6.2~6.8 逐步演示
+
+依赖第 2/3/4/5 章（tokenizer / attention / GPTModel / safetensors 权重加载）。
+
+== 6.2 准备数据集
+
+下载 UCI SMS Spam Collection（`SMSSpamCollection.tsv`），按书步骤平衡 + 划分：
+
+[source,text]
+----
+总样本数: 5574（ham=4827, spam=747）   # 与书的 5572 略有版本差异
+平衡后: ham=747, spam=747（总计 1494）
+划分: train=1045, val=149, test=300
+----
+
+平衡时从 ham 随机采样等量（seed 123）；划分用 70/10/20（seed 123）。生成
+`train.csv / validation.csv / test.csv`（带引号转义，支持含逗号/引号的文本）。
+
+== 6.3 创建数据加载器
+
+`SpamDataset`：BPE 编码 → 按最长样本确定 `max_length` → 填充（pad token=50256）→
+截断超长序列。批大小 8：
+
+[source,text]
+----
+训练集 max_length = 257       # 书 120（新版数据集最长消息不同）
+批次数量: 130 training, 19 validation, 38 test   # 与书一致
+最后批次: inputs [8, 257], labels [8]
+----
+
+== 6.4 初始化带有预训练权重的模型
+
+加载 GPT-2 small 权重（safetensors，见第 5 章），`context_length=1024, drop_rate=0, qkv_bias=True`：
+
+[source,text]
+----
+生成文本: Every effort moves you forward.\n\nThe first step is to understand the importance of your work
+（指令输入未微调时不会遵循指令，只是续写）
+----
+
+== 6.5 添加分类头
+
+`GPTClassifier` 复用 `GPTModel`（引用不复制），替换输出层为
+`Linear(768 → 2)`（`manual_seed(123)` 初始化），冻结除最后一个 Transformer 块
+和 `final_norm` 之外的全部参数（可训练参数 20 组）。
+
+验证输出（与书**逐值一致**，CPU/GPU 相同）：
+
+[source,text]
+----
+Inputs: [5211, 345, 423, 640]  # "Do you have time"
+Outputs: [1, 4, 2]
+ -1.5854  0.9904
+ -3.7235  7.4548
+ -2.2661  6.6049
+ -3.5983  3.9902              # 最后一个词元 → 分类用
+----
+
+== 6.6 计算分类损失和准确率
+
+微调前（随机初始化分类头）接近随机猜测，与书趋势一致：
+
+[source,text]
+----
+Training accuracy: 48.75%   # 书 46%
+Validation accuracy: 55%    # 书 45%
+Test accuracy: 51.25%       # 书 49%
+Training loss: 2.15169 / Validation loss: 1.90938 / Test loss: 2.16815
+----
+
+== 6.7 在有监督数据上微调模型
+
+AdamW（lr=5e-5, weight_decay=0.1），5 轮，eval_freq=50。损失收敛、过拟合趋势
+与书一致（数值因数据集划分 RNG 略有差异）：
+
+[source,text]
+----
+Ep 1 (Step 0): Train loss 1.97165, Val loss 1.75135
+Ep 1 (Step 100): Train loss 0.456008, Val loss 0.458661
+Training accuracy: 87.5% | Validation accuracy: 87.5%
+Ep 5 (Step 600): Train loss 0.0090355, Val loss 0.160011
+Training accuracy: 100% | Validation accuracy: 87.5%
+----
+
+== 6.8 使用大语言模型作为垃圾消息分类器
+
+`classify_review`：BPE 编码 → 填充到 `max_length` → 取最后一个输出词元 → argmax：
+
+[source,text]
+----
+text_1: "You are a winner you have been specially selected to receive $1000 cash or a $2000 award."
+分类结果: spam
+text_2: "Hey, just wanted to check if we're still on for dinner tonight? Let me know!"
+分类结果: not spam
+----
+
+模型保存到 `review_classifier.pth`（`torch::save`，含完整 state_dict）。
+
+== GPU 加速（RTX 4080）
+
+程序自动检测 CUDA（`torch::cuda::is_available()`），可用时在 GPU 上运行：
+
+[source,text]
+----
+设备: CUDA (RTX 4080)       # 或 CPU
+GPT-2 small 权重加载完成（设备: cuda:0）
+----
+
+* **模型迁移**：`model->to(torch::kCUDA)`、`classifier->to(torch::kCUDA)`
+* **批次迁移**：`inputs.to(torch::kCUDA)` / `labels.to(torch::kCUDA)`
+* **回读**：打印 logits 前 `.to(torch::kCPU)`，`argmax`/比较在 GPU 上算后回 CPU `.item()`
+* **性能**：5 轮微调 CPU 约 16 分钟，GPU（RTX 4080）不到 1 分钟，**加速 ~15-20 倍**；
+  数值与 CPU **逐位一致**
+
+运行时需指定 CUDA 工具链（见项目 README 环境准备）。
+
+== 编译与运行
+
+[source,shell]
+----
+cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/g++-11 \
+      -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc
+cmake --build build --target chapter06_finetuning -j$(nproc)
+
+# 数据准备（首次）：
+#   cd chapters/chapter06_finetuning/data
+#   curl -fsSL -o sms_spam_collection.zip https://archive.ics.uci.edu/static/public/228/sms+spam+collection.zip
+#   unzip -o sms_spam_collection.zip && mv SMSSpamCollection SMSSpamCollection.tsv
+
+LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
+  ./build/chapters/chapter06_finetuning/chapter06_finetuning
+----

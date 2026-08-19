@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "dataloader.h"
 #include "gpt.h"
 
 namespace ch5 {
