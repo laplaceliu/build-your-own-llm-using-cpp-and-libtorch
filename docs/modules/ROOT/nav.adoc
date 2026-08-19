@@ -2,3 +2,4 @@
 * xref:prerequisites.adoc[环境准备]
 * xref:chapter01_hello_torch:index.adoc[第 1 章 Hello LibTorch]
 * xref:chapter02_text_data:index.adoc[第 2 章 处理文本数据]
+* xref:chapter03_attention:index.adoc[第 3 章 编码注意力机制]
