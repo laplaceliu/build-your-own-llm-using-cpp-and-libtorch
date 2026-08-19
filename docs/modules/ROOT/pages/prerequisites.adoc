@@ -50,3 +50,22 @@ LibTorch 2.x 要求 *C++17*，GCC 8 以下无法使用。若默认 `g++` 过旧�
 npm install -g @antora/cli @antora/site-generator-default
 cd docs && antora playbook.yml
 ----
+
+== 5. 一键准备（统一脚本）
+
+环境就绪后，仓库 `scripts/` 下的脚本统一完成数据下载、权重下载、
+Ollama 启动与编译：
+
+[source,shell]
+----
+./scripts/setup.sh --all            # 下载数据+权重 → 启动 Ollama → 编译
+# 或分步：
+./scripts/download-data.sh          # 各章数据集（幂等）
+./scripts/download-weights.sh       # GPT-2 small/medium 权重
+./scripts/start-ollama.sh --pull    # 7.8 评估用（约 4.7 GB）
+./scripts/build.sh                  # 编译全部章节
+./scripts/run.sh chapter01_hello_torch   # 运行某章
+----
+
+下载优先直连（hf-mirror / github raw），失败自动回退代理。路径集中在
+`scripts/common.sh`（`LIBTORCH_ROOT` / `CUDA_VERSION` 可按机器修改）。

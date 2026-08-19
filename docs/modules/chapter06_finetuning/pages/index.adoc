@@ -122,17 +122,12 @@ GPT-2 small 权重加载完成（设备: cuda:0）
 
 == 编译与运行
 
+使用统一脚本（见仓库根 README）：
+
 [source,shell]
 ----
-cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/g++-11 \
-      -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc
-cmake --build build --target chapter06_finetuning -j$(nproc)
-
-# 数据准备（首次）：
-#   cd chapters/chapter06_finetuning/data
-#   curl -fsSL -o sms_spam_collection.zip https://archive.ics.uci.edu/static/public/228/sms+spam+collection.zip
-#   unzip -o sms_spam_collection.zip && mv SMSSpamCollection SMSSpamCollection.tsv
-
-LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
-  ./build/chapters/chapter06_finetuning/chapter06_finetuning
+./scripts/download-data.sh         # 下载 SMS Spam 数据集并解压重命名（幂等）
+./scripts/download-weights.sh small  # GPT-2 small 权重
+./scripts/build.sh                 # 配置并编译全部章节
+./scripts/run.sh chapter06_finetuning
 ----

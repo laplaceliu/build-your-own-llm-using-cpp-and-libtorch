@@ -9,6 +9,14 @@
 ├── CMakeLists.txt            # 顶层 CMake：一键编译全部章节
 ├── cmake/
 │   └── libtorch.cmake        # 定位 LibTorch + add_libtorch_executable 帮助函数
+├── scripts/                  # 统一准备/构建/运行脚本（见下）
+│   ├── setup.sh              # 一键准备：下载数据/权重 + Ollama + 编译
+│   ├── download-data.sh      # 下载各章数据集（词表/文本/Spam/指令数据）
+│   ├── download-weights.sh   # 下载 GPT-2 small/medium 权重
+│   ├── start-ollama.sh       # 启动 Ollama 服务 + 拉取 llama3
+│   ├── build.sh              # 配置并编译全部章节
+│   ├── run.sh                # 设置环境并运行指定章节
+│   └── common.sh             # 公共环境变量与下载函数（source 用）
 ├── chapters/                 # C++ 工程（每章一个独立子工程）
 │   ├── CMakeLists.txt
 │   ├── chapter01_hello_torch/
@@ -79,24 +87,33 @@ LibTorch 查找顺序：`-DTORCH_ROOT=<dir>` > `$TORCH_ROOT` > 默认 `/opt/libt
 CPU 约 8 分钟 → GPU 约 10-15 秒（~30 倍）；第 6 章 5 轮微调 CPU 约 16 分钟 →
 GPU 不到 1 分钟（~15-20 倍）。
 
-## 编译并运行 C++ 章节
+## 快速上手（统一脚本）
+
+所有准备/构建/运行操作统一由 `scripts/` 下的脚本完成：
 
 ```bash
-# 配置（g++ 默认版本过旧时显式指定）
-cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/g++-11 \
-      -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc
+# 一键准备：下载数据集 + 下载权重 + 启动 Ollama + 编译
+./scripts/setup.sh --all
 
-# 编译全部章节
-cmake --build build -j$(nproc)
+# 或按需分步
+./scripts/download-data.sh          # 各章数据集（幂等，已存在则跳过）
+./scripts/download-weights.sh       # GPT-2 small/medium 权重（约 2 GB）
+./scripts/start-ollama.sh --pull    # 启动 Ollama + 拉取 llama3（7.8 用）
+./scripts/build.sh                  # 配置并编译全部章节
 
-# 运行第 1 章（需把 libtorch / CUDA 运行库加入 LD_LIBRARY_PATH）
-LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
-  ./build/chapters/chapter01_hello_torch/chapter01_hello_torch
+# 运行指定章节（自动设置 LD_LIBRARY_PATH / CUDA 环境）
+./scripts/run.sh chapter01_hello_torch
+./scripts/run.sh chapter02_text_data
+./scripts/run.sh chapter03_attention
+./scripts/run.sh chapter04_gpt
+./scripts/run.sh chapter05_pretraining      # 可传 epochs：run.sh chapter05_pretraining <data_dir> 10
+./scripts/run.sh chapter06_finetuning
+./scripts/run.sh chapter07_instruction_tuning
 ```
 
-> 提示：配置阶段需要 CUDA 工具链（因为链接了 CUDA 版 libtorch），
-> 可先 `export PATH=/usr/local/cuda-13.0/bin:$PATH CUDA_HOME=/usr/local/cuda-13.0`。
-> 另外，若 shell 中残留了本项目以外的 `LD_LIBRARY_PATH`，建议先 `unset LD_LIBRARY_PATH` 再编译。
+> 提示：`scripts/common.sh` 集中管理 `LIBTORCH_ROOT`、`CUDA_VERSION` 等路径
+> （默认 `/opt/libtorch` + CUDA 13.0，可按机器修改）。下载优先直连
+> （hf-mirror / github raw），失败自动回退代理。
 
 ## 构建文档站点
 

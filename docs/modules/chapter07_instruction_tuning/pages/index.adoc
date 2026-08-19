@@ -133,7 +133,7 @@ RTX 4080 上 2 轮微调约 3-4 分钟（书中 A100 为 0.86 分钟）。
 用 Ollama 本地部署的 Llama3 对模型回复打分（0-100）。`query_ollama` 通过
 `/api/chat` REST API 调用（`seed=123, temperature=0` 保证确定性）。
 
-前置条件：`ollama serve` 运行中 + `ollama pull llama3`（4.7 GB）。
+前置条件：`./scripts/start-ollama.sh --pull`（启动服务 + 拉取 llama3，约 4.7 GB）。
 
 [source,text]
 ----
@@ -147,21 +147,15 @@ Given the input ... and correct output ..., score the model response ...
 
 == 编译与运行
 
+使用统一脚本（见仓库根 README）：
+
 [source,shell]
 ----
-cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/g++-11 \
-      -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc
-cmake --build build --target chapter07_instruction_tuning -j$(nproc)
-
-# 数据准备（首次）：
-#   cd chapters/chapter07_instruction_tuning/data
-#   curl -fsSL -o instruction-data.json \
-#     https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch07/01_main-chapter-code/instruction-data.json
-#   curl -fsSL -L -o gpt2-medium.safetensors \
-#     https://hf-mirror.com/gpt2-medium/resolve/main/model.safetensors
-
-LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
-  ./build/chapters/chapter07_instruction_tuning/chapter07_instruction_tuning
+./scripts/download-data.sh          # 指令数据集（幂等）
+./scripts/download-weights.sh medium  # GPT-2 medium 权重（1.52 GB）
+./scripts/start-ollama.sh --pull    # 7.8 评估用：启动 Ollama + 拉取 llama3
+./scripts/build.sh                  # 配置并编译全部章节
+./scripts/run.sh chapter07_instruction_tuning
 ----
 
 == 移植要点

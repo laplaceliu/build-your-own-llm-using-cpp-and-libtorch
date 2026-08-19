@@ -163,23 +163,19 @@ embedding(tensor([3])) = [-0.4015,  0.9666, -1.1481]   # 权重矩阵第 4 行
 
 == 编译与运行
 
+使用统一脚本（见仓库根 README）：
+
 [source,shell]
 ----
-cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/g++-11 \
-      -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc
-cmake --build build --target chapter02_text_data -j$(nproc)
-LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
-  ./build/chapters/chapter02_text_data/chapter02_text_data
+./scripts/build.sh                 # 配置并编译全部章节
+./scripts/run.sh chapter02_text_data   # 设置环境并运行
 ----
 
 数据文件（`data/`）已随仓库提交；如需重新下载：
 
 [source,shell]
 ----
-curl -fsSL -o data/the-verdict.txt \
-  https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch02/01_main-chapter-code/the-verdict.txt
-curl -fsSL -L -o data/encoder.json https://huggingface.co/gpt2/resolve/main/vocab.json
-curl -fsSL -L -o data/vocab.bpe    https://huggingface.co/gpt2/resolve/main/merges.txt
+./scripts/download-data.sh         # 幂等：已存在则跳过
 ----
 
 == GPU 加速

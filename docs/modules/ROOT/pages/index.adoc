@@ -42,12 +42,11 @@
 
 [source,shell]
 ----
-# 1. 编译第 1 章
-cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/g++-11
-cmake --build build -j$(nproc)
+# 1. 一键准备：下载数据 + 权重 + 启动 Ollama + 编译
+./scripts/setup.sh --all
 
-# 2. 运行
-./build/chapters/chapter01_hello_torch/chapter01_hello_torch
+# 2. 运行某章（自动设置运行环境）
+./scripts/run.sh chapter01_hello_torch
 
 # 3. 构建文档站点
 cd docs && antora playbook.yml

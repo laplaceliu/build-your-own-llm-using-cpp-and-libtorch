@@ -96,13 +96,12 @@ Decoded text: "Hello, I am Featureiman Byeswickattribute argue"   # 未训练的
 
 == 编译与运行
 
+使用统一脚本（见仓库根 README）：
+
 [source,shell]
 ----
-cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/g++-11 \
-      -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc
-cmake --build build --target chapter04_gpt -j$(nproc)
-LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
-  ./build/chapters/chapter04_gpt/chapter04_gpt
+./scripts/build.sh                 # 配置并编译全部章节
+./scripts/run.sh chapter04_gpt     # 设置环境并运行
 ----
 
 == 移植要点（C++ 特有坑）

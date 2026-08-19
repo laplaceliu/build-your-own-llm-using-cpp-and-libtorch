@@ -96,13 +96,12 @@ sa_v2(inputs)（seed 789）第 1 行 = [-0.0739, 0.0713]
 
 == 编译与运行
 
+使用统一脚本（见仓库根 README）：
+
 [source,shell]
 ----
-cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/g++-11 \
-      -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc
-cmake --build build --target chapter03_attention -j$(nproc)
-LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
-  ./build/chapters/chapter03_attention/chapter03_attention
+./scripts/build.sh                 # 配置并编译全部章节
+./scripts/run.sh chapter03_attention   # 设置环境并运行
 ----
 
 == 移植说明（libtorch 2.13 C++ API 差异）

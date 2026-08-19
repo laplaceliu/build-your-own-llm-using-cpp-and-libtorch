@@ -125,8 +125,7 @@ topk_probas: [0.0615, 0, 0, 0.5775, 0, 0, 0, 0.3610, 0]
 `safetensors`（`gpt2` 模型，权重与 OpenAI 相同，`~548 MB`），键名映射到书中
 `params` 结构后，加载逻辑与代码清单 5-5 完全一致：
 
-* 下载：`curl -fsSL -L -o data/gpt2-model.hf.safetensors https://hf-mirror.com/gpt2/resolve/main/model.safetensors`
-  （或 huggingface.co；`attn.bias` 掩码 buffer 跳过）
+* 下载：`./scripts/download-weights.sh small`（hf-mirror 优先，自动回退 HF/代理）
 * 加载：`gpt2-model.hf.safetensors` 传给第 3 个命令行参数
 * 配置：`context_length=1024, qkv_bias=True`（与 OpenAI 一致）
 * `c_attn.w [768,2304]` 按最后一维 split 成 q/k/v（书 `np.split(axis=-1)`）再转置
@@ -142,19 +141,17 @@ Output text:
 
 == 编译与运行
 
+使用统一脚本（见仓库根 README）：
+
 [source,shell]
 ----
-cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/g++-11 \
-      -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc
-cmake --build build --target chapter05_pretraining -j$(nproc)
+./scripts/download-weights.sh small    # 下载 GPT-2 small 权重（幂等）
+./scripts/build.sh                     # 配置并编译全部章节
 
 # 完整运行（10 轮预训练，CPU 约 8 分钟 / GPU 约 10-15 秒）
-LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
-  ./build/chapters/chapter05_pretraining/chapter05_pretraining
-
+./scripts/run.sh chapter05_pretraining
 # 跳过训练、指定 OpenAI 权重文件
-LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
-  ./build/chapters/chapter05_pretraining/chapter05_pretraining <data_dir> 0 <safetensors>
+./scripts/run.sh chapter05_pretraining <data_dir> 0 <safetensors>
 ----
 
 == GPU 加速
