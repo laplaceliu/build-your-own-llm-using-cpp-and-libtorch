@@ -20,10 +20,14 @@
 │   │   ├── src/              # main.cpp / bpe_tokenizer.cpp / torchtext_gpt2_bpe.cpp
 │   │   ├── third_party/      # torchtext 官方 GPT2BPEEncoder 源码（pytorch/text）
 │   │   └── data/             # the-verdict.txt + GPT-2 词表
-│   └── chapter03_attention/
+│   ├── chapter03_attention/
+│   │   ├── CMakeLists.txt
+│   │   ├── include/          # attention.h（SelfAttention/CausalAttention/MultiHeadAttention）
+│   │   └── src/              # main.cpp
+│   └── chapter04_gpt/
 │       ├── CMakeLists.txt
-│       ├── include/          # attention.h（SelfAttention/CausalAttention/MultiHeadAttention）
-│       └── src/              # main.cpp
+│       ├── include/          # gpt.h（LayerNorm/GELU/FeedForward/TransformerBlock/GPTModel）
+│       └── src/              # main.cpp（依赖第 2/3 章 tokenizer 与注意力）
 └── docs/                     # Antora 文档项目（playbook + 组件 + 模块）
     ├── playbook.yml          # 站点 playbook
     ├── antora.yml            # 组件描述
@@ -32,7 +36,8 @@
         ├── ROOT/             # 首页、环境准备、总导航
         ├── chapter01_hello_torch/   # 按章命名 module
         ├── chapter02_text_data/
-        └── chapter03_attention/
+        ├── chapter03_attention/
+        └── chapter04_gpt/
 ```
 
 ## 环境要求
@@ -96,7 +101,7 @@ curl -fsSL -o docs/ui/ui-bundle.zip \
 - [x] 第 1 章 Hello LibTorch：张量基础
 - [x] 第 2 章 处理文本数据（分词 / BPE / 滑动窗口 / 嵌入）
 - [x] 第 3 章 编码注意力机制（自注意力 / 因果注意力 / 多头注意力）
-- [ ] 第 4 章 从头实现 GPT 模型
+- [x] 第 4 章 从头实现 GPT 模型（1.24 亿参数 GPT-2 small + 文本生成）
 - [ ] 第 5 章 预训练
 - [ ] 第 6 章 分类微调
 - [ ] 第 7 章 指令微调

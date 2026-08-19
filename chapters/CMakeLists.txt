@@ -7,3 +7,4 @@
 add_subdirectory(chapter01_hello_torch)
 add_subdirectory(chapter02_text_data)
 add_subdirectory(chapter03_attention)
+add_subdirectory(chapter04_gpt)

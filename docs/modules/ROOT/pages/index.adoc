@@ -12,7 +12,8 @@
 * xref:chapter01_hello_torch:index.adoc[第 1 章 Hello LibTorch：张量基础]
 * xref:chapter02_text_data:index.adoc[第 2 章 处理文本数据]
 * xref:chapter03_attention:index.adoc[第 3 章 编码注意力机制]
-*（更多章节敬请期待：GPT 模型、训练循环……）*
+* xref:chapter04_gpt:index.adoc[第 4 章 从头实现 GPT 模型进行文本生成]
+*（更多章节敬请期待：预训练、微调……）*
 
 == 技术栈
 
