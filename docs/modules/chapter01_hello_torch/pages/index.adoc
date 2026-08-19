@@ -1,0 +1,81 @@
+= 第 1 章 Hello LibTorch：张量基础
+
+本章目标：
+
+* 验证 LibTorch 环境可编译、可运行
+* 认识 `torch::Tensor`：创建张量、查看形状 / 数据类型 / 设备
+* 完成第一次矩阵乘法
+
+对应代码：`chapters/chapter01_hello_torch/main.cpp`
+
+== 1.1 代码讲解
+
+`torch/torch.h` 是 LibTorch C++ API 的主头文件；`torch/cuda.h` 提供 CUDA 可用性查询。
+
+[source,cpp]
+----
+#include <torch/cuda.h>
+#include <torch/torch.h>
+
+#include <iostream>
+
+int main() {
+  // 创建两个张量：x 为 2x3，w 为 3x1
+  auto x = torch::tensor({{1.0f, 2.0f, 3.0f}, {4.0f, 5.0f, 6.0f}});
+  auto w = torch::tensor({{1.0f}, {1.0f}, {1.0f}});
+
+  // 矩阵乘法 x @ w -> (2,1)
+  auto y = x.matmul(w);
+
+  // 张量元信息：形状 / 数据类型 / 设备
+  std::cout << "shape = " << x.sizes() << ", dtype = " << x.dtype()
+            << ", device = " << x.device() << "\n";
+
+  std::cout << "CUDA available: "
+            << (torch::cuda::is_available() ? "yes" : "no") << "\n";
+  return 0;
+}
+----
+
+要点：
+
+* `torch::tensor(...)` 从初始化列表创建张量，自动推断形状与数据类型。
+* `tensor.sizes()` 返回 `IntArrayRef`，打印为 `[2, 3]`。
+* `tensor.device()` 显示张量所在设备（`cpu` / `cuda:0`）。
+* `torch::cuda::is_available()` 检查 CUDA 是否可用——在 GPU 版 LibTorch 下通常返回 `yes`。
+
+== 1.2 编译运行
+
+[source,shell]
+----
+cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/g++-11
+cmake --build build -j$(nproc)
+LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
+  ./build/chapters/chapter01_hello_torch/chapter01_hello_torch
+----
+
+== 1.3 预期输出
+
+[source,text]
+----
+=== Chapter 01: Hello LibTorch ===
+Torch version: 2.13.0
+x:
+ 1  2  3
+ 4  5  6
+[ CPUFloatType{2,3} ]
+...
+CUDA available: yes
+----
+
+== 1.4 独立构建本章
+
+每一章都是独立的 CMake 工程，也可以脱离顶层单独构建：
+
+[source,shell]
+----
+cmake -S chapters/chapter01_hello_torch \
+      -B chapters/chapter01_hello_torch/build \
+      -DCMAKE_CXX_COMPILER=/usr/bin/g++-11
+cmake --build chapters/chapter01_hello_torch/build -j$(nproc)
+----

@@ -1,0 +1,49 @@
+= 构建你自己的 LLM（C++ & LibTorch 教程）
+
+本仓库手把手教你从零开始，用 *C++* 和 *LibTorch*（PyTorch 的 C++ 前端）构建一个大语言模型（LLM）。
+
+* 每一章都有独立的 C++ 工程（`chapters/chapterNN_*`），可单独编译、单独运行。
+* 每一章都有对应的教程文档（本站点），按章独立编排。
+* 代码与文档一一对应：先读文档，再跑代码。
+
+== 目录
+
+* xref:prerequisites.adoc[环境准备]
+* xref:chapter01_hello_torch:index.adoc[第 1 章 Hello LibTorch：张量基础]
+*（更多章节敬请期待：词表与 Tokenizer、嵌入层、Transformer 模块、训练循环……）*
+
+== 技术栈
+
+|===
+| 组件 | 版本
+
+| LibTorch（CUDA 版）
+| {libtorch_version}
+
+| CUDA
+| {cuda_version}
+
+| GCC
+| ≥ {gcc_min}
+
+| CMake
+| ≥ 3.16
+
+| Antora
+| 3.x
+|===
+
+== 快速上手
+
+[source,shell]
+----
+# 1. 编译第 1 章
+cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/g++-11
+cmake --build build -j$(nproc)
+
+# 2. 运行
+./build/chapters/chapter01_hello_torch/chapter01_hello_torch
+
+# 3. 构建文档站点
+cd docs && antora playbook.yml
+----

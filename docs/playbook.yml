@@ -1,0 +1,33 @@
+# docs/playbook.yml
+# Antora Playbook：构建本教程文档站点
+#
+# 用法：
+#   cd docs
+#   antora playbook.yml
+# 产物输出到 docs/public/，可用任意静态服务器预览：
+#   python3 -m http.server 8080 -d public
+site:
+  title: Build Your Own LLM
+  # 注意：Antora 的 resource id 中"组件:模块:页面"用单冒号；
+  # 只有省略模块名（默认 ROOT）时才写双冒号，如 build-your-own-llm::index.adoc
+  start_page: build-your-own-llm:ROOT:index.adoc
+
+content:
+  sources:
+    - url: ..
+      start_path: docs
+      branches: HEAD
+      # 允许 Antora 直接读取当前工作树（无需先创建 git 提交）
+      worktrees: .
+
+ui:
+  # 默认 UI bundle 已缓存在本地（下载命令见 docs/README 或：
+  #   curl -fsSL -o ui/ui-bundle.zip \
+  #     "https://gitlab.com/antora/antora-ui-default/-/jobs/artifacts/master/raw/build/ui-bundle.zip?job=bundle-stable")
+  bundle:
+    url: ./ui/ui-bundle.zip
+    snapshot: true
+
+output:
+  clean: true
+  dir: ./public

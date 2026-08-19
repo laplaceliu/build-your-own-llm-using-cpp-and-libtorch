@@ -1,0 +1,18 @@
+# ---- CMake / C++ 构建产物 ----
+build/
+**/build/
+*.o
+*.a
+*.so
+
+# ---- Antora 站点产物 ----
+docs/public/
+
+# ---- IDE / 编辑器 ----
+.idea/
+.vscode/
+*.swp
+*~
+
+# ---- 系统 / 临时 ----
+.DS_Store

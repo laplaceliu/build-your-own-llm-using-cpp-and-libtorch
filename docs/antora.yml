@@ -1,0 +1,13 @@
+# docs/antora.yml
+# 组件描述：build-your-own-llm 文档站点
+name: build-your-own-llm
+title: Build Your Own LLM (C++ & LibTorch)
+version: 0.1.0
+start_page: ROOT:index.adoc
+nav:
+  - modules/ROOT/nav.adoc
+asciidoc:
+  attributes:
+    libtorch_version: 2.13.0
+    cuda_version: 13.0
+    gcc_min: 11

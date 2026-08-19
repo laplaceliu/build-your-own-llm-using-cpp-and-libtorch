@@ -1,0 +1,52 @@
+= 环境准备
+
+开始之前，请确认你的机器满足以下条件。
+
+== 1. LibTorch
+
+下载与 PyTorch 同版本的 *CUDA 版* LibTorch（例如 libtorch 2.13.0 + cu130），解压到某个目录（本文以 `/opt/libtorch` 为例）：
+
+[source,shell]
+----
+# 目录结构应类似：
+# /opt/libtorch
+# ├── include/
+# ├── lib/
+# │   ├── libtorch.so
+# │   ├── libtorch_cpu.so
+# │   └── libtorch_cuda.so
+# └── share/cmake/Torch/
+----
+
+本工程查找 LibTorch 的顺序为：`-DTORCH_ROOT=<dir>` > `$TORCH_ROOT` > 默认 `/opt/libtorch`。
+
+== 2. CUDA Toolkit
+
+由于使用了 CUDA 版 LibTorch，需要配套的 CUDA Toolkit（本文使用 CUDA {cuda_version}）。配置时通过环境变量或 `-DCMAKE_CUDA_COMPILER` 指向对应版本：
+
+[source,shell]
+----
+export PATH=/usr/local/cuda-13.0/bin:$PATH
+export CUDA_ROOT=/usr/local/cuda-13.0
+export CUDA_HOME=/usr/local/cuda-13.0
+export CUDAToolkit_ROOT=/usr/local/cuda-13.0
+----
+
+== 3. 编译器
+
+LibTorch 2.x 要求 *C++17*，GCC 8 以下无法使用。若默认 `g++` 过旧，请显式指定：
+
+[source,shell]
+----
+-DCMAKE_CXX_COMPILER=/usr/bin/g++-11
+----
+
+== 4. Antora
+
+本教程文档站点由 Antora 构建：
+
+[source,shell]
+----
+npm install -g @antora/cli @antora/site-generator-default
+cd docs && antora playbook.yml
+----
