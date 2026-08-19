@@ -159,6 +159,8 @@ int main(int argc, char* argv[]) {
     try {
         ch2::BpeTokenizer tokenizer(TOKENIZER_DIR "/encoder.json",
                                     TOKENIZER_DIR "/vocab.bpe");
+        // 禁用 TF32：保证 GPU 上的 matmul 精度与 CPU/书中数值一致（可复现）
+        at::globalContext().setAllowTF32CuBLAS(false);
         torch::Device device = select_device();
         std::cout << "=== 第 6 章：针对分类的微调（C++ + LibTorch）===\n"
                   << "数据目录: " << data_dir << "\n"

@@ -53,18 +53,29 @@ std::string read_file(const std::string& path) {
     return ss.str();
 }
 
+// 把数据加载器批次迁移到指定设备
+std::vector<ch2::GPTBatch> to_device(const std::vector<ch2::GPTBatch>& loader,
+                                     const torch::Device& dev) {
+    std::vector<ch2::GPTBatch> out;
+    out.reserve(loader.size());
+    for (const auto& b : loader) out.push_back({b.inputs.to(dev), b.targets.to(dev)});
+    return out;
+}
+
 // ==========================================================================
 // 5.1.1 使用 GPT 生成文本
 // ==========================================================================
 void demo_generate_text(ch4::GPTModel& model, ch2::BpeTokenizer& tokenizer) {
     section("5.1.1 使用 GPT 生成文本");
     const std::string start_context = "Every effort moves you";
-    auto encoded = ch5::text_to_token_ids(start_context, tokenizer);
+    auto encoded = ch5::text_to_token_ids(start_context, tokenizer)
+                       .to(model->tok_emb->weight.device());  // 与模型同设备
     std::cout << "encoded shape: " << encoded.sizes() << "\n";
 
     auto token_ids = ch4::generate_text_simple(model, encoded, /*max_new_tokens=*/10,
                                                /*context_size=*/model->pos_emb->weight.size(0));
-    std::cout << "Output text:\n " << ch5::token_ids_to_text(token_ids, tokenizer) << "\n";
+    std::cout << "Output text:\n "
+              << ch5::token_ids_to_text(token_ids.to(torch::kCPU), tokenizer) << "\n";
 }
 
 // ==========================================================================
@@ -72,12 +83,15 @@ void demo_generate_text(ch4::GPTModel& model, ch2::BpeTokenizer& tokenizer) {
 // ==========================================================================
 void demo_loss(ch4::GPTModel& model) {
     section("5.1.2 计算文本生成损失");
+    torch::Device dev = model->tok_emb->weight.device();  // 与模型同设备
     auto inputs = torch::tensor({{16833L, 3626L, 6100L},  // ["every effort moves",
                                  {40L, 1107L, 588L}},     //  "I really like"]
-                               torch::kLong);
+                               torch::kLong)
+                      .to(dev);
     auto targets = torch::tensor({{3626L, 6100L, 345L},   // [" effort moves you",
                                   {1107L, 588L, 11311L}}, //  " really like chocolate"]
-                                torch::kLong);
+                                torch::kLong)
+                      .to(dev);
 
     torch::Tensor logits;
     {
@@ -93,13 +107,13 @@ void demo_loss(ch4::GPTModel& model) {
     std::cout << "Targets batch 1: effort moves you\n"
               << "Outputs batch 1: (解码见完整运行输出)\n";
 
-    // 目标 token 的概率
+    // 目标 token 的概率（索引张量需与 probas 同设备）
     torch::Tensor target_probas_1 = probas.index(
-        {0, torch::indexing::Slice(), torch::tensor({3626L, 6100L, 345L})})
+        {0, torch::indexing::Slice(), torch::tensor({3626L, 6100L, 345L}).to(dev)})
         .diagonal();
     std::cout << "Text 1: " << target_probas_1 << "\n";
     torch::Tensor target_probas_2 = probas.index(
-        {1, torch::indexing::Slice(), torch::tensor({1107L, 588L, 11311L})})
+        {1, torch::indexing::Slice(), torch::tensor({1107L, 588L, 11311L}).to(dev)})
         .diagonal();
     std::cout << "Text 2: " << target_probas_2 << "\n";
 
@@ -162,8 +176,13 @@ void demo_dataset_loss(ch4::GPTModel& model, ch2::BpeTokenizer& tokenizer,
         std::cout << "  x " << b.inputs.sizes() << ", y " << b.targets.sizes() << "\n";
     }
 
-    double train_loss = ch5::calc_loss_loader(model, train_loader.batches());
-    double val_loss = ch5::calc_loss_loader(model, val_loader.batches());
+    // 批次迁移到模型所在设备
+    torch::Device dev = model->tok_emb->weight.device();
+    auto train_b = to_device(train_loader.batches(), dev);
+    auto val_b = to_device(val_loader.batches(), dev);
+
+    double train_loss = ch5::calc_loss_loader(model, train_b);
+    double val_loss = ch5::calc_loss_loader(model, val_b);
     std::cout << "Training loss: " << train_loss << "\n";
     std::cout << "Validation loss: " << val_loss << "\n";
 }
@@ -193,9 +212,14 @@ void demo_training(ch4::GPTModel& model, ch2::BpeTokenizer& tokenizer,
     options.weight_decay(0.1);
     auto optimizer = torch::optim::AdamW(model->parameters(), options);
 
+    // 批次迁移到模型所在设备
+    torch::Device dev = model->tok_emb->weight.device();
+    auto train_b = to_device(train_loader.batches(), dev);
+    auto val_b = to_device(val_loader.batches(), dev);
+
     std::cout << "开始训练 " << num_epochs << " 轮（每轮 " << train_loader.num_batches()
-              << " 个批次）...\n";
-    ch5::train_model_simple(model, train_loader.batches(), val_loader.batches(), optimizer,
+              << " 个批次，设备 " << dev << "）...\n";
+    ch5::train_model_simple(model, train_b, val_b, optimizer,
                             /*num_epochs=*/num_epochs, /*eval_freq=*/5, /*eval_iter=*/5,
                             /*start_context=*/"Every effort moves you", tokenizer);
 }
@@ -206,12 +230,13 @@ void demo_training(ch4::GPTModel& model, ch2::BpeTokenizer& tokenizer,
 void demo_decode_strategies(ch4::GPTModel& model, ch2::BpeTokenizer& tokenizer) {
     section("5.3 控制随机性的解码策略");
 
-    // --- 5.3.1 温度缩放：小词汇表示例 ---
+    // --- 5.3.1 温度缩放：小词汇表示例（与模型同设备）---
     std::cout << "-- 5.3.1 温度缩放 --\n";
+    torch::Device dev = model->tok_emb->weight.device();
     auto next_token_logits = torch::tensor(
-        {4.51, 0.89, -1.90, 6.75, 1.63, -1.62, -1.89, 6.28, 1.79});
+        {4.51, 0.89, -1.90, 6.75, 1.63, -1.62, -1.89, 6.28, 1.79}).to(dev);
     auto probas = torch::softmax(next_token_logits, 0);
-    auto next_token_id = torch::argmax(probas).item<int64_t>();
+    auto next_token_id = torch::argmax(probas).to(torch::kCPU).item<int64_t>();
     std::cout << "argmax 采样 -> id " << next_token_id << " (forward)\n";
 
     // multinomial 采样 1000 次
@@ -258,11 +283,13 @@ void demo_decode_strategies(ch4::GPTModel& model, ch2::BpeTokenizer& tokenizer) 
     model->eval();
     torch::manual_seed(123);
     auto token_ids = ch5::generate(model,
-                                   ch5::text_to_token_ids("Every effort moves you", tokenizer),
+                                   ch5::text_to_token_ids("Every effort moves you", tokenizer)
+                                       .to(dev),
                                    /*max_new_tokens=*/15,
                                    /*context_size=*/model->pos_emb->weight.size(0),
                                    /*temperature=*/1.4, /*top_k=*/25);
-    std::cout << "Output text:\n " << ch5::token_ids_to_text(token_ids, tokenizer) << "\n";
+    std::cout << "Output text:\n "
+              << ch5::token_ids_to_text(token_ids.to(torch::kCPU), tokenizer) << "\n";
     model->train();
 }
 
@@ -278,14 +305,16 @@ void demo_save_load(ch4::GPTModel& model, ch2::BpeTokenizer& tokenizer,
     std::cout << "已保存模型权重到 " << model_path << "（"
               << fs::file_size(model_path) / (1024.0 * 1024.0) << " MB）\n";
 
-    // 加载到新实例并验证：生成相同文本
+    // 加载到新实例并验证：生成相同文本（加载到原模型相同设备）
     ch4::GPTConfig cfg;
     cfg.context_length = 256;  // 与训练配置一致
     ch4::GPTModel model2(cfg);
     torch::load(model2, model_path);
+    model2->to(model->tok_emb->weight.device());
     model2->eval();
 
-    auto encoded = ch5::text_to_token_ids("Every effort moves you", tokenizer);
+    auto encoded = ch5::text_to_token_ids("Every effort moves you", tokenizer)
+                       .to(model->tok_emb->weight.device());
     model->eval();
     auto t1 = ch4::generate_text_simple(model, encoded, 5,
                                         model->pos_emb->weight.size(0));
@@ -294,7 +323,7 @@ void demo_save_load(ch4::GPTModel& model, ch2::BpeTokenizer& tokenizer,
     model->train();
     bool same = t1.equal(t2);
     std::cout << "加载后生成与训练模型一致: " << (same ? "yes" : "no") << "\n";
-    std::cout << "  生成: " << ch5::token_ids_to_text(t2, tokenizer) << "\n";
+    std::cout << "  生成: " << ch5::token_ids_to_text(t2.to(torch::kCPU), tokenizer) << "\n";
 
     std::cout << "\n说明：C++ 版 torch::save(model, path) 保存整个模型（含 state_dict）。\n"
               << "书中保存 optimizer 状态（AdamW 动量等）在 C++ API 中无对应接口，\n"
@@ -427,15 +456,21 @@ void demo_openai_weights(ch2::BpeTokenizer& tokenizer, const std::string& st_pat
     gpt->final_norm->shift_ = assign(gpt->final_norm->shift_, params("b"));
     gpt->out_head->weight = assign(gpt->out_head->weight, params("wte"));  // weight tying
 
-    std::cout << "权重加载完成，生成文本（top_k=50, temperature=1.5）:\n";
+    // 权重加载完成（在 CPU 上 copy_ 赋值），迁移到计算设备
+    torch::Device dev = torch::cuda::is_available() ? torch::Device(torch::kCUDA, 0)
+                                                    : torch::Device(torch::kCPU);
+    gpt->to(dev);
+    std::cout << "权重加载完成（设备 " << dev << "），生成文本（top_k=50, temperature=1.5）:\n";
     gpt->eval();
     torch::manual_seed(123);
     auto token_ids = ch5::generate(gpt,
-                                   ch5::text_to_token_ids("Every effort moves you", tokenizer),
+                                   ch5::text_to_token_ids("Every effort moves you", tokenizer)
+                                       .to(dev),
                                    /*max_new_tokens=*/25,
                                    /*context_size=*/1024,
                                    /*temperature=*/1.5, /*top_k=*/50);
-    std::cout << "Output text:\n " << ch5::token_ids_to_text(token_ids, tokenizer) << "\n";
+    std::cout << "Output text:\n "
+              << ch5::token_ids_to_text(token_ids.to(torch::kCPU), tokenizer) << "\n";
 }
 
 }  // namespace
@@ -445,7 +480,8 @@ int main(int argc, char* argv[]) {
     if (argc > 1) data_dir = argv[1];
     int64_t num_epochs = 10;
     if (argc > 2) num_epochs = std::stoll(argv[2]);
-    std::string st_path = data_dir + "/gpt2-model.safetensors";
+    // 默认用完整权重文件（gpt2-model.hf.safetensors，见文档下载命令）
+    std::string st_path = data_dir + "/gpt2-model.hf.safetensors";
     if (argc > 3) st_path = argv[3];
 
     try {
@@ -456,17 +492,22 @@ int main(int argc, char* argv[]) {
         } else {
             raw_text = std::string(1, ' ');
         }
+        // 禁用 TF32：保证 GPU 上的 matmul 精度与 CPU/书中数值一致（可复现）
+        at::globalContext().setAllowTF32CuBLAS(false);
+        torch::Device device =
+            torch::cuda::is_available() ? torch::Device(torch::kCUDA, 0)
+                                        : torch::Device(torch::kCPU);
         std::cout << "=== 第 5 章：在无标签数据上进行预训练（C++ + LibTorch）===\n"
                   << "数据目录: " << data_dir << "\n"
                   << "训练轮数: " << num_epochs << "\n"
-                  << "设备: CPU, 线程 "
-                  << torch::get_num_threads() << "\n";
+                  << "设备: " << device << "\n";
 
         // 5.1.1/5.1.2 用 seed 123 的随机初始化模型（书中 context=256）
         ch4::GPTConfig cfg;
         cfg.context_length = 256;
         torch::manual_seed(123);
         ch4::GPTModel model(cfg);
+        model->to(device);  // CPU 初始化（seed 与书一致）后迁移计算设备
         model->eval();
 
         demo_generate_text(model, tokenizer);

@@ -79,3 +79,18 @@ cmake -S chapters/chapter01_hello_torch \
       -DCMAKE_CXX_COMPILER=/usr/bin/g++-11
 cmake --build chapters/chapter01_hello_torch/build -j$(nproc)
 ----
+
+== 1.5 GPU 加速
+
+程序自动检测 CUDA（`torch::cuda::is_available()`），可用时张量在 GPU 上计算：
+
+[source,text]
+----
+CUDA available: yes
+Using device: cuda:0
+x:
+ 1  2  3
+ 4  5  6
+[ CUDAFloatType{2,3} ]       # CPU 时为 CPUFloatType
+----
+

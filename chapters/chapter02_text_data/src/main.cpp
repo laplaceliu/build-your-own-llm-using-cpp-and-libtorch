@@ -397,45 +397,52 @@ void demo_dataloader(const ch2::BpeTokenizer& tokenizer, const std::string& raw_
 }
 
 // ---- 2.7 词元嵌入 ----
-void demo_token_embedding() {
+void demo_token_embedding(const torch::Device& device) {
     section("2.7 创建词元嵌入");
+    std::cout << "设备: " << device << "\n";
     const int vocab_size = 6;
     const int output_dim = 3;
     torch::manual_seed(123);
     auto embedding_layer = torch::nn::Embedding(vocab_size, output_dim);
-    std::cout << "embedding_layer.weight（6x3）:\n" << embedding_layer->weight << "\n";
+    // 权重在 CPU 上 seed 123 初始化（与书数值一致），然后迁移到计算设备
+    embedding_layer->to(device);
+    std::cout << "embedding_layer.weight（6x3）:\n"
+              << embedding_layer->weight.to(torch::kCPU) << "\n";
 
-    auto e3 = embedding_layer->forward(torch::tensor({3}, torch::kLong));
-    std::cout << "embedding(tensor([3])):\n" << e3 << "\n";
+    auto e3 = embedding_layer->forward(torch::tensor({3}, torch::kLong).to(device));
+    std::cout << "embedding(tensor([3])):\n" << e3.to(torch::kCPU) << "\n";
 
-    auto input_ids = torch::tensor({2, 3, 5, 1}, torch::kLong);
+    auto input_ids = torch::tensor({2, 3, 5, 1}, torch::kLong).to(device);
     std::cout << "embedding(tensor([2, 3, 5, 1])):\n"
-              << embedding_layer->forward(input_ids) << "\n";
+              << embedding_layer->forward(input_ids).to(torch::kCPU) << "\n";
 }
 
 // ---- 2.8 位置嵌入 ----
 void demo_positional_embedding(const ch2::BpeTokenizer& tokenizer,
-                               const std::string& raw_text) {
+                               const std::string& raw_text,
+                               const torch::Device& device) {
     section("2.8 编码单词位置信息");
     const int vocab_size = 50257;
     const int output_dim = 256;
     const int max_length = 4;
     auto token_embedding_layer = torch::nn::Embedding(vocab_size, output_dim);
+    token_embedding_layer->to(device);
 
     auto enc_text = tokenizer.encode(raw_text);
     GPTDataLoader dl(enc_text, /*batch_size=*/8, /*max_length=*/max_length,
                      /*stride=*/max_length, /*shuffle=*/false, /*drop_last=*/true);
     const auto& first = dl.batches()[0];
-    torch::Tensor inputs = first.inputs;
-    std::cout << "Token IDs (8x4):\n" << inputs << "\n";
+    torch::Tensor inputs = first.inputs.to(device);
+    std::cout << "Token IDs (8x4):\n" << inputs.to(torch::kCPU) << "\n";
     std::cout << "Inputs shape = " << inputs.sizes() << "\n";
 
     auto token_embeddings = token_embedding_layer->forward(inputs);
     std::cout << "token_embeddings.shape = " << token_embeddings.sizes() << "\n";
 
     auto pos_embedding_layer = torch::nn::Embedding(max_length, output_dim);
+    pos_embedding_layer->to(device);
     auto pos_embeddings =
-        pos_embedding_layer->forward(torch::arange(max_length, torch::kLong));
+        pos_embedding_layer->forward(torch::arange(max_length, torch::kLong).to(device));
     std::cout << "pos_embeddings.shape = " << pos_embeddings.sizes() << "\n";
 
     auto input_embeddings = token_embeddings + pos_embeddings;
@@ -451,8 +458,12 @@ int main(int argc, char* argv[]) {
     try {
         const std::string raw_text = read_file(data_dir + "/the-verdict.txt");
 
+        torch::Device device =
+            torch::cuda::is_available() ? torch::Device(torch::kCUDA, 0)
+                                        : torch::Device(torch::kCPU);
         std::cout << "=== 第 2 章：处理文本数据（C++ + LibTorch）===\n"
-                  << "数据目录: " << data_dir << "\n";
+                  << "数据目录: " << data_dir << "\n"
+                  << "设备: " << device << "\n";
 
         demo_tokenization(raw_text);
         demo_vocab_v1(raw_text);
@@ -462,8 +473,8 @@ int main(int argc, char* argv[]) {
         demo_bpe(tokenizer);
         demo_bpe_torchtext(tokenizer, data_dir, raw_text);
         demo_dataloader(tokenizer, raw_text);
-        demo_token_embedding();
-        demo_positional_embedding(tokenizer, raw_text);
+        demo_token_embedding(device);
+        demo_positional_embedding(tokenizer, raw_text, device);
 
         std::cout << "\nCUDA available: " << (torch::cuda::is_available() ? "yes" : "no")
                   << "\n";

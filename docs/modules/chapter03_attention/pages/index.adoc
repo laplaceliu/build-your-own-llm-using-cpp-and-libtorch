@@ -111,3 +111,11 @@ LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
 * 子模块成员声明用 `torch::nn::Linear W_query\{nullptr\}`（避免默认构造断言）
 * buffer 用 `register_buffer` 返回的 `Tensor&` 存成员变量
 * 多头 wrapper 用 `std::vector<std::shared_ptr<CausalAttentionImpl>>` 存各头
+
+== GPU 加速
+
+程序自动检测 CUDA 并把输入张量（`make_inputs().to(device)`）与各注意力模块
+（`.to(device)`）迁移到 GPU（设备打印 `cuda:0`）。权重仍在 CPU 上 `manual_seed`
+初始化后再迁移，因此所有数值（`attn_scores_2`、`context_vec_2`、`sa_v1(inputs)`、
+因果掩码、MHA 输出等）**与书逐值一致**。程序开头禁用 TF32
+（`setAllowTF32CuBLAS(false)`）保证 GPU matmul 精度与 CPU 一致。

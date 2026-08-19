@@ -181,3 +181,10 @@ curl -fsSL -o data/the-verdict.txt \
 curl -fsSL -L -o data/encoder.json https://huggingface.co/gpt2/resolve/main/vocab.json
 curl -fsSL -L -o data/vocab.bpe    https://huggingface.co/gpt2/resolve/main/merges.txt
 ----
+
+== GPU 加速
+
+2.7/2.8 的嵌入层（`nn::Embedding`）自动迁移到 CUDA（设备打印 `cuda:0`），
+权重仍在 CPU 上 `manual_seed(123)` 初始化，因此**数值与书完全一致**：
+`embedding_layer.weight` 第一行 `0.3374 -0.1778 -0.1690` 等不变，只是 forward 计算
+在 GPU 上执行。2.1~2.6 为文本处理（CPU 逻辑，与设备无关）。

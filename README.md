@@ -67,6 +67,12 @@ LibTorch 查找顺序：`-DTORCH_ROOT=<dir>` > `$TORCH_ROOT` > 默认 `/opt/libt
 > 第 2 章的 torchtext 官方 `GPT2BPEEncoder` 依赖 RE2：
 > `sudo apt-get install libre2-dev`
 
+**GPU 支持**：所有章节自动检测 CUDA（`torch::cuda::is_available()`），可用时在 GPU
+上运行（如 RTX 4080）。权重始终在 CPU 上 `manual_seed` 初始化（保证与书数值一致）
+后再迁移 GPU，并禁用 TF32 保持 matmul 精度。GPU 加速效果：第 5 章 10 轮预训练
+CPU 约 8 分钟 → GPU 约 10-15 秒（~30 倍）；第 6 章 5 轮微调 CPU 约 16 分钟 →
+GPU 不到 1 分钟（~15-20 倍）。
+
 ## 编译并运行 C++ 章节
 
 ```bash

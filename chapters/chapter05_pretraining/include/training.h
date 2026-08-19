@@ -44,7 +44,7 @@ inline torch::Tensor calc_loss_batch(const torch::Tensor& input_batch,
                                      ch4::GPTModel& model) {
     auto logits = model->forward(input_batch);
     auto loss = torch::nn::functional::cross_entropy(
-        logits.flatten(0, 1), target_batch.flatten());
+        logits.flatten(0, 1), target_batch.to(logits.device()).flatten());
     return loss;
 }
 
@@ -99,14 +99,15 @@ inline void generate_and_print_sample(ch4::GPTModel& model, ch2::BpeTokenizer& t
                                       const std::string& start_context) {
     model->eval();
     int64_t context_size = model->pos_emb->weight.size(0);
-    auto encoded = text_to_token_ids(start_context, tokenizer);
+    auto encoded = text_to_token_ids(start_context, tokenizer)
+                       .to(model->tok_emb->weight.device());  // 与模型同设备
     torch::Tensor token_ids;
     {
         torch::NoGradGuard no_grad;
         token_ids = ch4::generate_text_simple(model, encoded, /*max_new_tokens=*/50,
                                               context_size);
     }
-    auto decoded = token_ids_to_text(token_ids, tokenizer);
+    auto decoded = token_ids_to_text(token_ids.to(torch::kCPU), tokenizer);
     std::string one_line;
     for (char c : decoded) one_line += (c == '\n') ? ' ' : c;
     std::cout << one_line << "\n";

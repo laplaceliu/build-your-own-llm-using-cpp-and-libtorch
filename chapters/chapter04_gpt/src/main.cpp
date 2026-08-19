@@ -50,7 +50,7 @@ void print_ids(const std::string& label, const std::vector<int>& ids) {
 }
 
 // ---- 4.1 DummyGPTModel ----
-void demo_dummy_gpt(ch2::BpeTokenizer& tokenizer) {
+void demo_dummy_gpt(ch2::BpeTokenizer& tokenizer, const torch::Device& device) {
     section("4.1 DummyGPTModel（占位符架构）");
     const ch4::GPTConfig cfg;
 
@@ -62,11 +62,13 @@ void demo_dummy_gpt(ch2::BpeTokenizer& tokenizer) {
     std::cout << "txt2 = ";
     print_ids("", txt2);
     auto batch = torch::stack({torch::tensor(txt1, torch::kLong),
-                               torch::tensor(txt2, torch::kLong)}, 0);
+                               torch::tensor(txt2, torch::kLong)}, 0)
+                     .to(device);
     std::cout << "batch:\n" << batch << "\n";
 
     torch::manual_seed(123);
     ch4::DummyGPTModel model(cfg);
+    model->to(device);
     auto logits = model->forward(batch);
     std::cout << "Output shape: " << logits.sizes() << "\n";
     // 打印每个 batch/位置的前 3 个 logits（与书中输出对照）
@@ -79,11 +81,12 @@ void demo_dummy_gpt(ch2::BpeTokenizer& tokenizer) {
 }
 
 // ---- 4.2 LayerNorm ----
-void demo_layer_norm() {
+void demo_layer_norm(const torch::Device& device) {
     section("4.2 层归一化（LayerNorm）");
     torch::manual_seed(123);
-    auto batch_example = torch::randn({2, 5});
+    auto batch_example = torch::randn({2, 5}).to(device);
     auto layer = torch::nn::Sequential(torch::nn::Linear(5, 6), torch::nn::ReLU());
+    layer->to(device);
     auto out = layer->forward(batch_example);
     std::cout << "out (Linear(5,6)+ReLU):\n" << out << "\n";
 
@@ -102,6 +105,7 @@ void demo_layer_norm() {
 
     // LayerNorm 类
     ch4::LayerNorm ln(5);
+    ln->to(device);
     auto out_ln = ln->forward(batch_example);
     std::cout << "LayerNorm(5)(batch_example) mean:\n"
               << out_ln.mean(-1, true) << "\n";
@@ -110,17 +114,19 @@ void demo_layer_norm() {
 }
 
 // ---- 4.3 GELU + FeedForward ----
-void demo_gelu_ff() {
+void demo_gelu_ff(const torch::Device& device) {
     section("4.3 GELU 激活函数 + FeedForward 前馈网络");
     ch4::GELU gelu;
-    auto x = torch::tensor({-3.0, -2.0, -1.0, -0.75, 0.0, 1.0, 2.0, 3.0});
+    gelu->to(device);
+    auto x = torch::tensor({-3.0, -2.0, -1.0, -0.75, 0.0, 1.0, 2.0, 3.0}).to(device);
     std::cout << "x      = " << x << "\n";
     std::cout << "GELU(x)= " << gelu->forward(x) << "\n";
     std::cout << "ReLU(x)= " << torch::relu(x) << "\n";
 
     const ch4::GPTConfig cfg;
     ch4::FeedForward ffn(cfg);
-    auto fx = torch::rand({2, 3, cfg.emb_dim});
+    ffn->to(device);
+    auto fx = torch::rand({2, 3, cfg.emb_dim}).to(device);
     auto fout = ffn->forward(fx);
     std::cout << "FeedForward: input " << fx.sizes() << " -> output " << fout.sizes()
               << "\n";
@@ -130,7 +136,7 @@ void demo_gelu_ff() {
 // ---- 4.4 快捷连接 ----
 void print_gradients(ch4::ExampleDeepNeuralNetwork& model, const torch::Tensor& x) {
     auto output = model->forward(x);
-    auto target = torch::zeros({1, 1});
+    auto target = torch::zeros({1, 1}, x.options());
     auto loss = torch::mse_loss(output, target);
     model->zero_grad();
     loss.backward();
@@ -143,29 +149,32 @@ void print_gradients(ch4::ExampleDeepNeuralNetwork& model, const torch::Tensor& 
     }
 }
 
-void demo_shortcut() {
+void demo_shortcut(const torch::Device& device) {
     section("4.4 添加快捷连接（对比梯度）");
     const std::vector<int64_t> layer_sizes{3, 3, 3, 3, 3, 1};
-    auto sample_input = torch::tensor({{1.0f, 0.0f, -1.0f}});
+    auto sample_input = torch::tensor({{1.0f, 0.0f, -1.0f}}).to(device);
 
     torch::manual_seed(123);
     ch4::ExampleDeepNeuralNetwork model_without_shortcut(layer_sizes, /*use_shortcut=*/false);
+    model_without_shortcut->to(device);
     std::cout << "-- 无快捷连接 --\n";
     print_gradients(model_without_shortcut, sample_input);
 
     torch::manual_seed(123);
     ch4::ExampleDeepNeuralNetwork model_with_shortcut(layer_sizes, /*use_shortcut=*/true);
+    model_with_shortcut->to(device);
     std::cout << "-- 有快捷连接 --\n";
     print_gradients(model_with_shortcut, sample_input);
 }
 
 // ---- 4.5 TransformerBlock ----
-void demo_transformer_block() {
+void demo_transformer_block(const torch::Device& device) {
     section("4.5 TransformerBlock");
     const ch4::GPTConfig cfg;
     torch::manual_seed(123);
-    auto x = torch::rand({2, 4, cfg.emb_dim});
+    auto x = torch::rand({2, 4, cfg.emb_dim}).to(device);
     ch4::TransformerBlock block(cfg);
+    block->to(device);
     auto output = block->forward(x);
     std::cout << "Input shape:  " << x.sizes() << "\n";
     std::cout << "Output shape: " << output.sizes() << "\n";
@@ -177,7 +186,8 @@ void demo_transformer_block() {
 void demo_gpt_model(ch4::GPTModel& model) {
     section("4.6 GPTModel（1.24 亿参数 GPT-2 small）");
     auto batch = torch::tensor({{6109L, 3626L, 6100L, 345L},
-                                {6109L, 1110L, 6622L, 257L}}, torch::kLong);
+                                {6109L, 1110L, 6622L, 257L}}, torch::kLong)
+                     .to(model->tok_emb->weight.device());  // 与模型同设备
     std::cout << "Input batch:\n" << batch << "\n";
 
     auto out = model->forward(batch);
@@ -249,7 +259,9 @@ void demo_generate(ch4::GPTModel& model, ch2::BpeTokenizer& tokenizer) {
     auto encoded = tokenizer.encode(start_context);
     std::cout << "encoded: ";
     print_ids("", encoded);
-    auto encoded_tensor = torch::tensor(encoded, torch::kLong).unsqueeze(0);
+    auto encoded_tensor = torch::tensor(encoded, torch::kLong)
+                              .to(model->tok_emb->weight.device())
+                              .unsqueeze(0);
     std::cout << "encoded_tensor.shape: " << encoded_tensor.sizes() << "\n";
 
     model->eval();  // 关闭 dropout
@@ -276,19 +288,26 @@ int main(int argc, char* argv[]) {
 
     try {
         ch2::BpeTokenizer tokenizer(data_dir + "/encoder.json", data_dir + "/vocab.bpe");
+        // 禁用 TF32：保证 GPU 上的 matmul 精度与 CPU/书中数值一致（可复现）
+        at::globalContext().setAllowTF32CuBLAS(false);
+        torch::Device device =
+            torch::cuda::is_available() ? torch::Device(torch::kCUDA, 0)
+                                        : torch::Device(torch::kCPU);
         std::cout << "=== 第 4 章：从头实现 GPT 模型进行文本生成（C++ + LibTorch）===\n"
-                  << "数据目录: " << data_dir << "\n";
+                  << "数据目录: " << data_dir << "\n"
+                  << "设备: " << device << "\n";
 
-        demo_dummy_gpt(tokenizer);
-        demo_layer_norm();
-        demo_gelu_ff();
-        demo_shortcut();
-        demo_transformer_block();
+        demo_dummy_gpt(tokenizer, device);
+        demo_layer_norm(device);
+        demo_gelu_ff(device);
+        demo_shortcut(device);
+        demo_transformer_block(device);
 
         // 4.6 与 4.7 共用一个 seed 123 初始化的 GPTModel
         const ch4::GPTConfig cfg;
         torch::manual_seed(123);
         ch4::GPTModel model(cfg);
+        model->to(device);  // CPU 初始化（seed 与书一致）后迁移计算设备
         demo_gpt_model(model);
         demo_generate(model, tokenizer);
 

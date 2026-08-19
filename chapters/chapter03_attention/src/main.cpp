@@ -114,9 +114,10 @@ void demo_trainable_step_by_step(const torch::Tensor& inputs) {
     const int64_t d_out = 2;
 
     torch::manual_seed(123);
-    auto W_query = torch::rand({d_in, d_out});
-    auto W_key = torch::rand({d_in, d_out});
-    auto W_value = torch::rand({d_in, d_out});
+    // 权重在 CPU 上 seed 123 生成（与书数值一致），再迁移到 inputs 所在设备
+    auto W_query = torch::rand({d_in, d_out}).to(inputs.device());
+    auto W_key = torch::rand({d_in, d_out}).to(inputs.device());
+    auto W_value = torch::rand({d_in, d_out}).to(inputs.device());
     std::cout << "W_query (3x2):\n" << W_query << "\n";
 
     // 查询/键/值向量
@@ -155,10 +156,12 @@ void demo_self_attention_classes(const torch::Tensor& inputs) {
 
     torch::manual_seed(123);
     ch3::SelfAttentionV1 sa_v1(d_in, d_out);
+    sa_v1->to(inputs.device());  // CPU 初始化（seed 与书一致）后迁移计算设备
     std::cout << "sa_v1(inputs):\n" << sa_v1->forward(inputs) << "\n";
 
     torch::manual_seed(789);
     ch3::SelfAttentionV2 sa_v2(d_in, d_out);
+    sa_v2->to(inputs.device());
     std::cout << "sa_v2(inputs):\n" << sa_v2->forward(inputs) << "\n";
 
     // 练习 3.1：把 v2（nn.Linear，权重转置存储）的权重赋给 v1
@@ -168,6 +171,8 @@ void demo_self_attention_classes(const torch::Tensor& inputs) {
     sa_v1b->W_query = sa_v2b->W_query->weight.t();
     sa_v1b->W_key = sa_v2b->W_key->weight.t();
     sa_v1b->W_value = sa_v2b->W_value->weight.t();
+    sa_v1b->to(inputs.device());
+    sa_v2b->to(inputs.device());
     std::cout << "\n[练习 3.1] 把 v2 的 Linear 权重转置后赋给 v1\n";
     std::cout << "sa_v1(赋 v2 权重)(inputs):\n" << sa_v1b->forward(inputs) << "\n";
     std::cout << "sa_v2(inputs):\n" << sa_v2b->forward(inputs) << "\n";
@@ -181,6 +186,7 @@ void demo_causal_mask(const torch::Tensor& inputs) {
 
     torch::manual_seed(789);
     ch3::SelfAttentionV2 sa_v2(d_in, d_out);
+    sa_v2->to(inputs.device());
 
     auto queries = sa_v2->W_query->forward(inputs);
     auto keys = sa_v2->W_key->forward(inputs);
@@ -189,9 +195,10 @@ void demo_causal_mask(const torch::Tensor& inputs) {
         attn_scores / std::sqrt(static_cast<double>(keys.size(-1))), -1);
     std::cout << "attn_weights (softmax):\n" << attn_weights << "\n";
 
-    // 第 (2) 步：tril 掩码
+    // 第 (2) 步：tril 掩码（与 attn_scores 同设备）
     const int64_t context_length = attn_scores.size(0);
-    auto mask_simple = torch::tril(torch::ones({context_length, context_length}));
+    auto mask_simple = torch::tril(torch::ones({context_length, context_length},
+                                               inputs.options()));
     std::cout << "mask_simple (tril):\n" << mask_simple << "\n";
 
     auto masked_simple = attn_weights * mask_simple;
@@ -204,7 +211,8 @@ void demo_causal_mask(const torch::Tensor& inputs) {
     std::cout << "masked_simple_norm:\n" << masked_simple_norm << "\n";
 
     // 更高效：softmax 前用 -inf 掩码
-    auto mask = torch::triu(torch::ones({context_length, context_length}), 1);
+    auto mask = torch::triu(torch::ones({context_length, context_length},
+                                        inputs.options()), 1);
     auto masked = attn_scores.masked_fill(mask.to(torch::kBool),
                                           -std::numeric_limits<double>::infinity());
     std::cout << "masked (attn_scores + -inf):\n" << masked << "\n";
@@ -218,7 +226,8 @@ void demo_dropout(const torch::Tensor& inputs) {
     section("3.5.2 利用 dropout 掩码额外的注意力权重");
     torch::manual_seed(123);
     auto dropout = torch::nn::Dropout(0.5);
-    auto example = torch::ones({6, 6});
+    dropout->to(inputs.device());
+    auto example = torch::ones({6, 6}, inputs.options());
     std::cout << "dropout(ones(6,6)) 50%:\n" << dropout->forward(example) << "\n";
 
     // 对因果注意力权重做 dropout
@@ -226,11 +235,13 @@ void demo_dropout(const torch::Tensor& inputs) {
     const int64_t d_out = 2;
     torch::manual_seed(789);
     ch3::SelfAttentionV2 sa_v2(d_in, d_out);
+    sa_v2->to(inputs.device());
     auto queries = sa_v2->W_query->forward(inputs);
     auto keys = sa_v2->W_key->forward(inputs);
     auto attn_scores = queries.matmul(keys.t());
     const int64_t context_length = attn_scores.size(0);
-    auto mask = torch::triu(torch::ones({context_length, context_length}), 1);
+    auto mask = torch::triu(torch::ones({context_length, context_length},
+                                        inputs.options()), 1);
     auto masked = attn_scores.masked_fill(mask.to(torch::kBool),
                                           -std::numeric_limits<double>::infinity());
     auto attn_weights = torch::softmax(
@@ -252,6 +263,7 @@ void demo_causal_attention_class(const torch::Tensor& inputs) {
     torch::manual_seed(123);
     const int64_t context_length = batch.size(1);
     ch3::CausalAttention ca(d_in, d_out, context_length, /*dropout=*/0.0);
+    ca->to(batch.device());
     auto context_vecs = ca->forward(batch);
     std::cout << "context_vecs.shape = " << context_vecs.sizes() << "\n";
     std::cout << "context_vecs:\n" << context_vecs << "\n";
@@ -268,6 +280,7 @@ void demo_mha_wrapper(const torch::Tensor& inputs) {
     torch::manual_seed(123);
     ch3::MultiHeadAttentionWrapper mha(d_in, d_out, context_length, /*dropout=*/0.0,
                                        /*num_heads=*/2);
+    mha->to(batch.device());
     auto context_vecs = mha->forward(batch);
     std::cout << "context_vecs.shape = " << context_vecs.sizes() << "\n";
     std::cout << "context_vecs:\n" << context_vecs << "\n";
@@ -276,6 +289,7 @@ void demo_mha_wrapper(const torch::Tensor& inputs) {
     torch::manual_seed(123);
     ch3::MultiHeadAttentionWrapper mha2(d_in, /*d_out=*/1, context_length,
                                         /*dropout=*/0.0, /*num_heads=*/2);
+    mha2->to(batch.device());
     auto cv2 = mha2->forward(batch);
     std::cout << "\n[练习 3.2] d_out=1, num_heads=2 -> shape = " << cv2.sizes() << "\n";
 }
@@ -294,7 +308,8 @@ void demo_mha_weight_split(const torch::Tensor& inputs) {
                               {0.7179f, 0.7058f, 0.9156f, 0.4340f}},
                              {{0.0772f, 0.3565f, 0.1479f, 0.5331f},
                               {0.4066f, 0.2318f, 0.4545f, 0.9737f},
-                              {0.4606f, 0.5159f, 0.4220f, 0.5786f}}}});
+                              {0.4606f, 0.5159f, 0.4220f, 0.5786f}}}})
+        .to(batch.device());
     std::cout << "a.shape = " << a.sizes() << "\n";
     auto batched = a.matmul(a.transpose(2, 3));
     std::cout << "a @ a.transpose(2,3):\n" << batched << "\n";
@@ -308,6 +323,7 @@ void demo_mha_weight_split(const torch::Tensor& inputs) {
     torch::manual_seed(123);
     ch3::MultiHeadAttention mha(d_in, d_out, context_length, /*dropout=*/0.0,
                                 /*num_heads=*/2);
+    mha->to(batch.device());
     auto context_vecs = mha->forward(batch);
     std::cout << "context_vecs.shape = " << context_vecs.sizes() << "\n";
     std::cout << "context_vecs:\n" << context_vecs << "\n";
@@ -316,7 +332,8 @@ void demo_mha_weight_split(const torch::Tensor& inputs) {
     torch::manual_seed(123);
     ch3::MultiHeadAttention gpt2_mha(/*d_in=*/768, /*d_out=*/768, /*context_length=*/1024,
                                      /*dropout=*/0.0, /*num_heads=*/12);
-    auto probe = torch::randn({2, 8, 768});
+    gpt2_mha->to(batch.device());
+    auto probe = torch::randn({2, 8, 768}).to(batch.device());
     auto out = gpt2_mha->forward(probe);
     std::cout << "\n[练习 3.3] GPT-2 规模 (d=768, heads=12, context=1024)\n";
     std::cout << "  输入 [2,8,768] -> 输出 " << out.sizes() << "\n";
@@ -327,8 +344,14 @@ void demo_mha_weight_split(const torch::Tensor& inputs) {
 
 int main() {
     try {
-        std::cout << "=== 第 3 章：编码注意力机制（C++ + LibTorch）===\n";
-        auto inputs = make_inputs();
+        // 禁用 TF32：保证 GPU 上的 matmul 精度与 CPU/书中数值一致（可复现）
+        at::globalContext().setAllowTF32CuBLAS(false);
+        torch::Device device =
+            torch::cuda::is_available() ? torch::Device(torch::kCUDA, 0)
+                                        : torch::Device(torch::kCPU);
+        std::cout << "=== 第 3 章：编码注意力机制（C++ + LibTorch）===\n"
+                  << "设备: " << device << "\n";
+        auto inputs = make_inputs().to(device);
 
         demo_naive_self_attention(inputs);
         demo_all_context_vectors(inputs);

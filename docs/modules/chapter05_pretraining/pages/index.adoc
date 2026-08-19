@@ -148,7 +148,7 @@ cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/g++-11 \
       -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc
 cmake --build build --target chapter05_pretraining -j$(nproc)
 
-# 完整运行（10 轮预训练，CPU 约 8 分钟）
+# 完整运行（10 轮预训练，CPU 约 8 分钟 / GPU 约 10-15 秒）
 LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
   ./build/chapters/chapter05_pretraining/chapter05_pretraining
 
@@ -157,6 +157,18 @@ LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
   ./build/chapters/chapter05_pretraining/chapter05_pretraining <data_dir> 0 <safetensors>
 ----
 
+== GPU 加速
+
+程序自动检测 CUDA（设备打印 `cuda:0`），模型在 CPU 上 `manual_seed(123)` 初始化后
+迁移 GPU，数据加载器批次同步迁移。程序开头禁用 TF32
+（`setAllowTF32CuBLAS(false)`），保证 GPU matmul 与 CPU 精度一致。
+
+* **确定性数值与书一致**：5.1.2 损失 10.7940 / 困惑度 48725.82、
+  5.1.3 训练/验证损失 10.9876/10.9811，均与书逐值一致
+* **训练加速**：10 轮预训练 CPU 约 8 分钟 → GPU（RTX 4080）约 10-15 秒（**~30 倍**）
+* **生成文本**：贪心解码（5.1.1）与书一致；温度采样（5.3.3/5.5）因 multinomial
+  随机性 + GPU 微小浮点差异，文本可能与书不同（同 CPU 版在 seed 123 下恰好复现书）
+
 == 移植要点
 
 * **in-place 赋值**：给 requires_grad 的叶子参数赋值须在 `NoGradGuard` 下
@@ -164,3 +176,5 @@ LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
 * **shuffle RNG**：C++ 与 Python 的 DataLoader shuffle 序列不同 → 训练损失
   曲线有微小差异（趋势一致）。
 * **温度采样**：`generate` 用 `torch::multinomial`，随机性使生成文本不可逐字复现。
+* **默认权重路径**：程序默认使用完整权重文件 `gpt2-model.hf.safetensors`（约 523 MB，
+  见 5.5 下载命令）；不要用未下载完的残file，否则 safetensors 解析会越界崩溃。

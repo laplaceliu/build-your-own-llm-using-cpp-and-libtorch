@@ -115,3 +115,14 @@ LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
 * **`eval()` 模式**：生成前调用 `model->eval()` 关闭所有 dropout。
 * **权重一致性**：C++ 与 Python 在 CPU 上共享 RNG，`manual_seed(123)` 后
   全部权重（Embedding/Linear/LayerNorm）逐值一致。
+
+== GPU 加速
+
+程序自动检测 CUDA，`GPTModel` 在 CPU 上 `manual_seed(123)` 初始化后迁移到 GPU
+（设备打印 `cuda:0`），输入 batch / 生成 token 同步迁移。验证结果：
+
+* 4.6 logits（`out[0][0][:3]` 等）与书**逐值一致**（权重一致 + TF32 禁用）
+* 4.7 生成文本 `"Hello, I am Featureiman Byeswickattribute argue"` 与书**逐字一致**
+* 参数量 163,009,536 / 124,412,160 不变
+
+程序开头禁用 TF32（`setAllowTF32CuBLAS(false)`）保证 GPU matmul 精度与 CPU 一致。
