@@ -6,3 +6,4 @@
 * xref:chapter04_gpt:index.adoc[第 4 章 从头实现 GPT 模型进行文本生成]
 * xref:chapter05_pretraining:index.adoc[第 5 章 在无标签数据上进行预训练]
 * xref:chapter06_finetuning:index.adoc[第 6 章 针对分类的微调]
+* xref:chapter07_instruction_tuning:index.adoc[第 7 章 通过微调遵循人类指令]

@@ -32,11 +32,16 @@
 │   │   ├── CMakeLists.txt
 │   │   ├── include/          # training.h / dataloader.h / safetensors.h
 │   │   └── src/              # main.cpp（预训练 + 解码策略 + OpenAI 权重加载）
-│   └── chapter06_finetuning/
+│   ├── chapter06_finetuning/
+│   │   ├── CMakeLists.txt
+│   │   ├── include/          # finetuning.h（分类头/评估/训练）
+│   │   ├── src/              # main.cpp（垃圾消息分类微调，GPU 加速）
+│   │   └── data/             # SMS Spam 数据集（首次运行需下载）
+│   └── chapter07_instruction_tuning/
 │       ├── CMakeLists.txt
-│       ├── include/          # finetuning.h（分类头/评估/训练）
-│       ├── src/              # main.cpp（垃圾消息分类微调，GPU 加速）
-│       └── data/             # SMS Spam 数据集（首次运行需下载）
+│       ├── include/          # instruction.h（format_input/collate/加载器）
+│       ├── src/              # main.cpp（GPT-2 medium 指令微调 + Ollama 评估）
+│       └── data/             # instruction-data.json + gpt2-medium.safetensors
 └── docs/                     # Antora 文档项目（playbook + 组件 + 模块）
     ├── playbook.yml          # 站点 playbook
     ├── antora.yml            # 组件描述
@@ -48,7 +53,8 @@
         ├── chapter03_attention/
         ├── chapter04_gpt/
         ├── chapter05_pretraining/
-        └── chapter06_finetuning/
+        ├── chapter06_finetuning/
+        └── chapter07_instruction_tuning/
 ```
 
 ## 环境要求
@@ -121,5 +127,5 @@ curl -fsSL -o docs/ui/ui-bundle.zip \
 - [x] 第 4 章 从头实现 GPT 模型（1.24 亿参数 GPT-2 small + 文本生成）
 - [x] 第 5 章 预训练（损失评估 / AdamW 训练 / 温度与 Top-k 解码 / 加载 OpenAI 权重）
 - [x] 第 6 章 分类微调（SMS Spam 二分类，支持 GPU 加速）
-- [ ] 第 7 章 指令微调
+- [x] 第 7 章 指令微调（GPT-2 medium 355M + Alpaca 风格指令微调 + Ollama 评估）
 - [ ] 更多敬请期待……

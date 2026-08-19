@@ -1,0 +1,175 @@
+= 第 7 章 通过微调遵循人类指令
+
+本章把预训练 GPT-2 medium（355M）微调为能遵循人类指令的模型，对应代码位于
+`chapters/chapter07_instruction_tuning/`，全程 GPU 加速（RTX 4080）。
+
+* `include/instruction.h` —— format_input / InstructionDataset / custom_collate_fn /
+  InstructionLoader / extract_response
+* `src/main.cpp` —— 7.2~7.8 逐步演示
+
+依赖第 2/3/4/5 章（tokenizer / attention / GPTModel / safetensors 权重加载）。
+
+== 7.2 为有监督指令微调准备数据集
+
+下载本书专用指令数据集（1100 条指令-回复对，204 KB）：
+
+[source,text]
+----
+Number of entries: 1100
+Example entry:
+  instruction: Identify the correct spelling of the following word.
+  input: Ocassion
+  output: The correct spelling is 'Occasion.'
+----
+
+`format_input`（Alpaca 提示词风格）：`instruction` 与可选 `input` 组合成
+"Below is an instruction..." 模板（`input` 为空时省略 `### Input:` 小节，与书一致）。
+按 85/10/5 划分：
+
+[source,text]
+----
+Training set length: 935, Validation set length: 55, Test set length: 110
+----
+
+== 7.3 将数据组织成训练批次
+
+`InstructionDataset` 预词元化 `format_input(entry) + "\n\n### Response:\n" + output`。
+`custom_collate_fn`（代码清单 7-5）核心逻辑：
+
+* 附加 `<|endoftext|>`（ID 50256）并填充到批次最长序列
+* `inputs = padded[:-1]`，`targets = padded[1:]`（目标左移一位）
+* **保留第一个 50256**，其余填充词元替换为 `-100`（`ignore_index`，供交叉熵忽略）
+
+与书示例 `[0,1,2,3,4] / [5,6] / [7,8,9]` 的批处理结果**逐值一致**：
+
+[source,text]
+----
+inputs:  [[0,1,2,3,4], [5,6,50256,50256,50256], [7,8,9,50256,50256]]
+targets: [[1,2,3,4,50256], [6,50256,-100,-100,-100], [8,9,50256,-100,-100]]
+----
+
+交叉熵 `ignore_index=-100` 演示与书一致：`loss_1 = 1.1269`，加入第三词元后
+`loss_2 = 0.7936`，目标换为 `-100` 后 `loss_3 = 1.1269 == loss_1`（掩码生效）。
+
+== 7.4 创建指令数据集的数据加载器
+
+`InstructionLoader` 等价 `DataLoader(collate_fn=custom_collate_fn)`：每个批次填充到
+该批最长序列（不同批次长度不同），`allowed_max_length=1024` 截断：
+
+[source,text]
+----
+Train loader:  [8, 87] [8, 67] [8, 71] ...   # 每批长度不同（与书同理）
+总批次: 116 train, 7 val, 14 test
+----
+
+== 7.5 加载预训练的大语言模型
+
+加载 GPT-2 **medium (355M)**（`emb_dim=1024, n_layers=24, n_heads=16`，
+`context=1024, qkv_bias=True`），权重来自 HF `gpt2-medium` safetensors（1.52 GB）。
+微调前在 `val_data[0]`（主动句转被动句）上的基准回复**与书一致**——模型只是重复
+输入，不能遵循指令：
+
+[source,text]
+----
+### Response:
+The chef cooks the meal every day.
+### Instruction:
+Convert the active sentence to passive: 'The chef cooks the
+----
+
+== 7.6 在指令数据上微调大语言模型
+
+初始损失与书一致：
+
+[source,text]
+----
+Training loss: 3.85124    # 书 3.8259
+Validation loss: 3.76193  # 书 3.7619（逐值一致）
+----
+
+AdamW（lr=5e-5, weight_decay=0.1）2 轮微调（eval_freq=5, eval_iter=5），
+训练日志与书趋势一致：
+
+[source,text]
+----
+Ep 1 (Step 000000): Train loss 2.609, Val loss 2.590   # 书 2.637/2.626
+Ep 1 (Step 000005): Train loss 0.930, Val loss 1.095   # 书 1.174/1.103
+Ep 1 (Step 000115): Train loss 0.522, Val loss 0.657
+Ep 2 (Step 000230): Train loss 0.373, Val loss 0.674   # 书 0.300/0.657
+----
+
+每轮结束在 `val_data[0]` 上生成回复，第二轮正确输出被动句（与书行为一致，
+具体措辞因训练随机性略有不同）：
+
+[source,text]
+----
+### Response: The meal is cooked every day by the chef.<|endoftext|>
+----
+
+RTX 4080 上 2 轮微调约 3-4 分钟（书中 A100 为 0.86 分钟）。
+
+== 7.7 抽取并保存模型回复
+
+对全部 110 条测试样本生成回复（贪心，`max_new_tokens=256, eos_id=50256`），
+保存到 `instruction-data-with-response.json`。前 3 条对比与书**高度一致**：
+
+[source,text]
+----
+1) 明喻:
+   正确   >> The car is as fast as lightning.
+   模型   >> The car is as fast as a cheetah.        # 书 "a bullet"（都是合理明喻）
+2) 雷暴云:
+   正确   >> ... is cumulonimbus.
+   模型   >> ... cumulus clouds.                     # 与书同样的近似错误
+3) 作者:
+   正确   >> Jane Austen.
+   模型   >> The author of 'Pride and Prejudice' is Jane Austen.   # 与书几乎一致
+----
+
+模型保存为 `gpt2-medium355M-sft.pth`。
+
+== 7.8 评估微调后的大语言模型
+
+用 Ollama 本地部署的 Llama3 对模型回复打分（0-100）。`query_ollama` 通过
+`/api/chat` REST API 调用（`seed=123, temperature=0` 保证确定性）。
+
+前置条件：`ollama serve` 运行中 + `ollama pull llama3`（4.7 GB）。
+
+[source,text]
+----
+Ollama running: true
+Given the input ... and correct output ..., score the model response ...
+  前 3 条回复的打分输出（与书结构一致）
+----
+
+*练习 7.1* 换 Phi-3 提示词风格；*练习 7.2* 掩码指令部分损失（`-100`）；*练习 7.3*
+用完整 Alpaca 数据集（52 002 条）；*练习 7.4* LoRA 参数高效微调。
+
+== 编译与运行
+
+[source,shell]
+----
+cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/g++-11 \
+      -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc
+cmake --build build --target chapter07_instruction_tuning -j$(nproc)
+
+# 数据准备（首次）：
+#   cd chapters/chapter07_instruction_tuning/data
+#   curl -fsSL -o instruction-data.json \
+#     https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch07/01_main-chapter-code/instruction-data.json
+#   curl -fsSL -L -o gpt2-medium.safetensors \
+#     https://hf-mirror.com/gpt2-medium/resolve/main/model.safetensors
+
+LD_LIBRARY_PATH=/opt/libtorch/lib:/usr/local/cuda-13.0/lib64 \
+  ./build/chapters/chapter07_instruction_tuning/chapter07_instruction_tuning
+----
+
+== 移植要点
+
+* **`ignore_index=-100`**：指令微调损失必须用 `CrossEntropyFuncOptions().ignore_index(-100)`
+  掩码填充词元（与预训练/分类微调不同）。
+* **贪心解码**：`generate` 用 `temperature=0.0`（等价 `argmax`）+ `eos_id=50256`
+  停止，与书中 eval 逻辑一致。
+* **TF32 禁用**：程序开头 `setAllowTF32CuBLAS(false)`，保证 GPU matmul 精度与书一致。
+* **训练随机性**：shuffle RNG 与 Python 不同 → 训练损失曲线、逐词生成文本与书有
+  微小差异（趋势与行为一致）。

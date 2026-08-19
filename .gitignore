@@ -21,6 +21,8 @@ docs/public/
 pdf/
 
 # ---- 大模型权重与训练检查点（数百 MB，不入库）----
-**/gpt2-model*.safetensors
+**/gpt2*.safetensors
 **/model.pth
 **/model_and_optimizer.pth
+**/*-sft.pth
+**/instruction-data-with-response.json
