@@ -28,9 +28,9 @@
 
 评测不需要重复训练，但这里也提供：
 
-* `bash-eval-data.jsonl` — 随机抽出的 **dev 集**（默认 200 条），
-  由 `scripts/convert_data.py --split` 写出（仅作为参考实现）。
-  实际评测直接用 `eval/bash_eval.py --all` 跑全量。
+* 当前 `convert_data.py` **不切分 train/dev**，整文件用作训练集。
+  评测时由 `eval/bash_eval.py` 自行随机抽样（默认 200 条）或跑全量（`--all`）。
+  如需固定的 dev 集，可自行用 `jq` / `python -c '...'` 从 JSON 里切。
 
 * 评测方法参见 `eval/bash_eval.py`：每条样本把模型生成的 bash 命令
   丢进沙箱（`subprocess` + `timeout` + **命令白名单**）执行，

@@ -12,27 +12,40 @@
 #
 # PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True 减少 caching allocator 碎片。
 set -euo pipefail
-ROOT="/home/maigi/Source/github.com/laplaceliu/build-your-own-llm-using-cpp-and-libtorch"
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "${SELF_DIR}/.." && pwd)"
 SIZE="${SIZE:-medium}"
 EPOCHS="${EPOCHS:-3}"
 BATCH="${BATCH:-4}"          # 默认 batch=4，避免 OOM
 LR="${LR:-5e-5}"
-OUT_DIR="${ROOT}/gpt-bash/data"
+OUT_DIR="${ROOT}/data"
+WEIGHTS_DIR="${ROOT}/../chapters/chapter07_instruction_tuning/data"
+WEIGHTS="${WEIGHTS_DIR}/gpt2-medium.safetensors"
 OUT_NAME="bash-sft-${SIZE}.pth"
-LOG="${ROOT}/gpt-bash/logs/train-${SIZE}-$(date +%Y%m%d-%H%M%S).log"
-mkdir -p "${ROOT}/gpt-bash/logs"
+LOG="${ROOT}/logs/train-${SIZE}-$(date +%Y%m%d-%H%M%S).log"
+mkdir -p "${ROOT}/logs" "${WEIGHTS_DIR}"
 
 # 减少 PyTorch CUDA caching allocator 碎片（OOM 时官方建议）
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
-cd "${ROOT}/gpt-sft"
+# 预训练权重预检：缺失则提示用户跑下载脚本（避免 1.4 GB 下载后才发现路径不对）
+if [[ ! -s "${WEIGHTS}" ]]; then
+  echo "[错误] 预训练权重不存在: ${WEIGHTS}" >&2
+  echo "[提示] 第一次训练？请先运行:" >&2
+  echo "       ${SELF_DIR}/download-weights.sh" >&2
+  echo "       （默认走 hf-mirror 国内加速；可 HF_MIRROR=huggingface 切回 HF 官方）" >&2
+  exit 1
+fi
+
+cd "${ROOT}/../gpt-sft"
 echo "[$(date)] 训练开始: size=${SIZE} epochs=${EPOCHS} batch=${BATCH} lr=${LR}"
+echo "[$(date)] 权重: ${WEIGHTS} (大小 $(stat -c%s "${WEIGHTS}") 字节)"
 echo "[$(date)] 输出到: ${OUT_DIR}/${OUT_NAME}"
 echo "[$(date)] 日志: ${LOG}"
 echo "[$(date)] PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF}"
 ./scripts/run.sh train \
-    --data "${ROOT}/gpt-bash/data/bash-instruction-data.json" \
-    --weights "${ROOT}/chapters/chapter07_instruction_tuning/data/gpt2-medium.safetensors" \
+    --data "${ROOT}/data/bash-instruction-data.json" \
+    --weights "${WEIGHTS}" \
     --size "${SIZE}" \
     --epochs "${EPOCHS}" \
     --batch "${BATCH}" \

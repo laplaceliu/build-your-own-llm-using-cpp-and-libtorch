@@ -157,7 +157,7 @@ def main() -> int:
     ap.add_argument("--model", required=True)
     ap.add_argument("--size", default="medium", choices=["small", "medium", "large", "xl"])
     ap.add_argument("--binary", default=str(
-        Path(__file__).resolve().parent.parent / "build/chat/bash_chat"))
+        Path(__file__).resolve().parent.parent / "build/bash_chat"))
     ap.add_argument("--n", type=int, default=200, help="评测样本数（随机抽）")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--max-new", type=int, default=64)

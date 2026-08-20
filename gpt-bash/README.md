@@ -5,17 +5,27 @@
 相比数学推理任务，bash 命令**输出更短、可执行验证**，对小参
 数模型更友好。
 
-## 数据
-
-* 来源：TellinaTool/nl2bash（CMU），ATLAS-Lab nl2bash-shell 的等价语料。
-* 规模：12,607 条 `(nl, bash_cmd)` 对。
-* 处理：`scripts/convert_data.py` 转 Alpaca JSON，输出到 `data/bash-instruction-data.json`。
+## 数据 + 权重 一站式下载
 
 ```bash
 cd gpt-bash
-./scripts/download-data.sh        # 拉 raw 数据
+./scripts/download-data.sh       # 拉 nl2bash 原始语料 (~2 MB)
+./scripts/download-weights.sh    # 拉 gpt2-medium.safetensors (~1.4 GiB)
 python3 scripts/convert_data.py --shuffle --out data/bash-instruction-data.json
 ```
+
+镜像说明（所有下载脚本统一通过环境变量切换）：
+
+| 变量 | 取值 | 说明 |
+|---|---|---|
+| `HF_MIRROR` | `hf-mirror` (默认) | 中国大陆加速，~10 MB/s |
+| `HF_MIRROR` | `huggingface` | HF 官方，需海外网络 |
+| `ALL_PROXY` | `socks5h://host:port` | 走代理（如 `localhost:30000`）|
+
+例：`HF_MIRROR=huggingface ./scripts/download-weights.sh`
+
+数据本身（GitHub raw）国内也能直连，慢一点；若遇 `connection timed out`，
+可手动设置 `ALL_PROXY` 或下载后放到 `data/raw/all.{nl,cm}`。
 
 ## 训练
 
@@ -31,6 +41,14 @@ cd gpt-sft && ./scripts/build.sh build_train && cd ../..
     --size small --epochs 5 --batch_size 8 --lr 5e-5
 ```
 
+更省事的一行（gpt-bash 内置 `train-background.sh`）：
+
+```bash
+./gpt-bash/scripts/run.sh train    # 透传到 gpt-sft/scripts/run.sh
+SIZE=medium EPOCHS=3 BATCH=4 ./gpt-bash/scripts/train-background.sh
+#  ← 自动检查权重，缺失时引导跑 download-weights.sh
+```
+
 > 因为 `convert_data.py` 输出和第 7 章的 `instruction-data.json`
 > 同一种 Alpaca 格式，**不需要修改任何训练代码**。
 
@@ -38,7 +56,7 @@ cd gpt-sft && ./scripts/build.sh build_train && cd ../..
 
 ```bash
 cd gpt-bash && cmake -B build && cmake --build build -j
-./build/chat/bash_chat --model data/bash-sft-small.pth --size small --no-cuda
+./build/bash_chat --model data/bash-sft-small.pth --size small --no-cuda
 # NL> list all the files in the current directory
 # $ ls
 ```

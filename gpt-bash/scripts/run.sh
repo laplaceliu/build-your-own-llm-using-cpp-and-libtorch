@@ -59,7 +59,8 @@ EOF
       echo "[提示] 第一次运行？构建: cmake -B build && cmake --build build -j"
       exit 1
     fi
-    LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/opt/libtorch/lib" \
+    TORCH_LIB="${TORCH_ROOT:-/opt/libtorch}/lib"
+    LD_LIBRARY_PATH="${TORCH_LIB}:${LD_LIBRARY_PATH:-}" \
       exec build/bash_chat "$@"
     ;;
   *)
