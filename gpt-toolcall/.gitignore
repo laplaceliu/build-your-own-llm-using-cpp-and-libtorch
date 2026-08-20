@@ -1,0 +1,11 @@
+chat/
+data/smoke/
+data/raw/
+data/*.json
+data/*.jsonl
+data/toolcall-sft*.pth
+data/*.pth.bak
+build*/
+result*.json
+logs/*.log
+logs/*.nohup.log
