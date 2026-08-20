@@ -1,0 +1,162 @@
+[
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Replace \",,\" with \", ,\" twice in \"data.csv\" and display the \",\" delimited result as a table",
+    "output": "sed 's/,,/, ,/g;s/,,/, ,/g' data.csv | column -s, -t"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Fetch a script from the web and interpert (run) it in the current shell, without writing the script to disk.",
+    "output": "source <(wget -q -O - \"http://www.modulesgarden.com/manage/dl.php?type=d&id=676\")"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Replace all URLs in \"MyHTMLFile.html\" with \"$pub_url\" and create a backup with suffix \".bak\"",
+    "output": "sed -i.bak \"s#https.*\\.com#$pub_url#g\" MyHTMLFile.html"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "search for the regular/normal file 'myfile' in the folder /root excluding those that are present in the \"work\" directory",
+    "output": "find /root/ -name 'work' -prune -o -name myfile -type f -print"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "find all the directories in the home folder do not search in sub directories",
+    "output": "find /home -maxdepth 1 -type d"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Find all regular files with space in their names under current directory and rename them by replacing all spaces with _",
+    "output": "find -name \"* *\" -type f | rename 's/ /_/g'"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "find all files in current folder which are less than 300MB",
+    "output": "find . -size -300M"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "list all zero-length files under the current directory",
+    "output": "find . -empty -exec ls {} \\;"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Assign the alias rm1g to a find command that removes any .tar file larger than a gigabyte.",
+    "output": "alias rm1g=\"find / -type f -name *.tar -size +1G -exec rm -i {} \\;\""
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Search the file hierarchy for files larger than 100000 KB without searching any mounted removable media",
+    "output": "find / -path /media -prune -o -size +200000 -print"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Compress every file in the current directory tree that matches \"*cache.html\" and keep the original file",
+    "output": "find . -type f -name \"*cache.html\" -exec sh -c \"gzip < {} > {}.gz\" \\;"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Search the current directory tree for regular files modified within the past 24 hours whose names do not end with \".DS_Store\"",
+    "output": "find . -mtime -1 ! -name '.DS_Store' -type f -exec basename {} \\;"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Search for \"YOURSTRING\" in all files under current directory",
+    "output": "grep YOURSTRING `find .`"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Test if \"file.tar.gz\" is corrupt",
+    "output": "gunzip -t file.tar.gz"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Delete all hidden files under $some_directory",
+    "output": "find \"$some_directory\" -type f -name '.*' -exec rm '{}' \\;"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "get the job number from the stored PID",
+    "output": "jobs -l | fgrep $! | perl -ne 'print \"$1\\n\" if /\\[(\\d+)\\]/'"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Enables shell option 'nullglob'.",
+    "output": "shopt -s execfail"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Find all files/directories named 'date' under /usr",
+    "output": "find /usr -name date"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Print the minimum transmission time of 10 ping requests to \"google.com\" from cygwin",
+    "output": "ping google.com -n 10 | grep Minimum | awk '{print $3}' | sed s/,//"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "get a PID of a process with name 'test.sh &'",
+    "output": "jobs -l | grep 'test.sh &' | grep -v grep | awk '{print $2}'"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Print file type of the executable file of command \"python\"",
+    "output": "file `which python`"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Search the files from the current directory tree for \"chrome\"",
+    "output": "find . -exec grep chrome {} +"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "split file /etc/gconf/schemas/gnome-terminal.schemas into pieces per 1000000 lines",
+    "output": "split -n 1000000 /etc/gconf/schemas/gnome-terminal.schemas"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Search all *.txt files under ~/documents for the word \"DOGS\"",
+    "output": "find ~/documents -type f -name '*.txt' -exec grep -s DOGS {} \\; -print"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Execute \"ls -l\" every 2 seconds",
+    "output": "watch 'ls -l'"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Dump a MySQL database over a compressed SSH tunnel and use it as input to mysql",
+    "output": "mysqldump –add-drop-table –extended-insert –force –log-error=error.log -uUSER -pPASS OLD_DB_NAME | ssh -C user@newhost “mysql -uUSER -pPASS NEW_DB_NAME”"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Check if $path_in_question is mount point of filesystem",
+    "output": "df $path_in_question | grep \" $path_in_question$\""
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Search for directory foo ignoring case",
+    "output": "find . -iname foo -type d"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Extract the contents of \"Input.txt.gz\", list the unique first comma separated field prefixed by the number of occurrences",
+    "output": "zcat Input.txt.gz | cut -d , -f 1 | sort | uniq -c"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Create tar archive \"foo.tar\" and copy all files from directory tree /tmp/a1 to it",
+    "output": "find /tmp/a1 | xargs tar cvf foo.tar"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Find broken links using the file command on each symlinks in the system and searching for the keword 'broken' with grep",
+    "output": "find / -type l -print0 | xargs -0 file | grep broken"
+  },
+  {
+    "instruction": "Translate the following natural language request into a bash one-liner.",
+    "input": "Compress all files under /source directory tree using gzip with best compression method",
+    "output": "find /source -type f -print0 | xargs -0 -n 1 -P $CORES gzip -9"
+  }
+]

@@ -1,0 +1,10 @@
+data/raw/*.nl
+data/raw/*.cm
+data/bash-sft*.pth
+data/*.pth.bak
+data/*.json
+data/*.jsonl
+build*/
+result*.json
+logs/*.log
+logs/*.nohup.log
