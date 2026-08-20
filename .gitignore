@@ -25,6 +25,7 @@ pdf/
 **/model.pth
 **/model_and_optimizer.pth
 **/*-sft.pth
+**/data/*.pth
 **/instruction-data-with-response.json
 
 # ---- gpt-sft 独立项目构建与数据 ----
