@@ -1,0 +1,31 @@
+# 数据与模型产物：下载数据 / 训练检查点 / 临时输出
+data/*.json
+data/*.parquet
+data/*.csv
+data/*.safetensors
+data/*.pth
+data/*.bin
+data/*.zip
+data/*.tar.gz
+data/*.tar
+data/sft-*.json
+data/rl-*.json
+data/eval-*.json
+data/compare-*.csv
+data/compare-*.md
+data/downloads/
+
+# 构建目录
+build/
+build-*/
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+
+# IDE / 系统
+.vscode/
+.idea/
+*.swp
+.DS_Store

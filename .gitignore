@@ -32,3 +32,17 @@ pdf/
 gpt-sft/build/
 gpt-sft/data/*.pth
 gpt-sft/data/*.safetensors
+
+# ---- reasoning 独立项目构建与数据 ----
+reasoning/build/
+reasoning/data/*.pt
+reasoning/data/*.parquet
+reasoning/data/*.csv
+reasoning/data/*.log
+reasoning/data/*.pid
+reasoning/data/*.json
+reasoning/data/**/
+reasoning/data/downloads/
+
+# 仓库根目录直接放的原始数据集(避免误提交)
+Sky-T1_data_17k.json

@@ -17,6 +17,7 @@
 
 #include "dataloader.h"
 #include "gpt.h"
+#include "bpe_tokenizer.h"
 
 namespace ch5 {
 
