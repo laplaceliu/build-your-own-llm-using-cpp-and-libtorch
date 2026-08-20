@@ -7,3 +7,6 @@
 * xref:chapter05_pretraining:index.adoc[第 5 章 在无标签数据上进行预训练]
 * xref:chapter06_finetuning:index.adoc[第 6 章 针对分类的微调]
 * xref:chapter07_instruction_tuning:index.adoc[第 7 章 通过微调遵循人类指令]
+* xref:chapterD_training_loop:index.adoc[附录 D 训练循环技巧]
+* xref:chapterE_lora:index.adoc[附录 E LoRA 参数高效微调]
+* xref:chapterF_reasoning:index.adoc[附录 F 推理增强]

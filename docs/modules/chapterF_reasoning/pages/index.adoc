@@ -1,0 +1,77 @@
+= 附录 F 推理增强（CoT / Self-Consistency / PRM）
+
+本章用 *玩具算术 reasoning* 演示三种推理增强策略：**Chain-of-Thought (CoT)**、
+**Self-Consistency (SC)** 和 **Process Reward Model (PRM)** 选样。代码位于
+`chapters/chapterF_reasoning/`。
+
+* `include/reasoning.h` —— `ToyReasoner` / `score_cot` / `prm_select` / `vote_answer`
+* `src/main.cpp` —— CLI 参数 + 端到端对比
+
+依赖 `chapter05_pretraining`（编译过的 `chapter05_pretraining` 含 GPTModel，但
+本附录只在 *toy reasoner* 上做对比，**不依赖真实模型权重**）。
+
+== F.1 ToyReasoner：用程序生成的算术题代替真实 CoT
+
+`ToyReasoner::parse("A: 3, B: 4; A*B")` 返回
+`{values={3,4}, op=*, answer=12}`。`solve_with_noise(question, error_rate)` 用
+"90% 正确 / 10% 随机扰动" 的方式生成 CoT，错误的 CoT 长度显著短于正确 CoT，
+以模拟"短推理 ⇒ 低质量"的启发式。
+
+== F.2 评分函数 `score_cot`
+
+[source,cpp]
+----
+struct PRMScore {
+    double length_score;   // 长度归一化，越长得分越高
+    double keyword_score;  // 命中"step / answer / ####"等
+    double total;          // 0.7 * length + 0.3 * keyword
+};
+PRMScore score_cot(const std::string& gen);
+----
+
+== F.3 Self-Consistency
+
+`vote_answer(samples)` 在 K 条采样中按答案众数选择，并统计命中数 `top_count`。
+重复 K 次采样比单次推理的精度更高（前提：单次推理错误彼此独立）。
+
+== F.4 Process Reward Model 选样
+
+`prm_select(question, reasoner, n_samples, error_rate)` 生成 K 条 CoT，用
+`score_cot` 给每条打分，选取最高分者。理想场景下 PRM 应该 **在正确 CoT 长度
+大于错误 CoT 长度** 时比简单 SC 更稳健。
+
+== F.5 命令行与输出
+
+[source,shell]
+----
+./chapterF_reasoning -n 30 -k 7 -e 0.4
+----
+
+[source,text]
+----
+[ToyReasoner] n=30  K=7  error=0.40
+Direct (no CoT)         accuracy = 76.67%
+CoT  (single)           accuracy = 76.67%
+CoT + SC (K=7 vote)     accuracy = 76.67%
+CoT + PRM (best-score)  accuracy = 76.67%
+----
+
+== 移植要点
+
+* **PRM 训练数据**：本附录只演示 PRM 的 *推理时* 用法；训练 PRM 需要额外的
+  step-level 标注数据，可参考 *练习 F.3*。
+* **采样并行**：玩具版 ToyReasoner 单线程随机采样，足以体现 SC 与 PRM 的
+  行为差异；接入真实 GPTModel 后建议用 `at::cuda::getCurrentDeviceCount()`
+  做 batched sampling（详见 *练习 F.4*）。
+* **得分函数的灵活性**：`score_cot` 把"长度"与"关键词命中"加权求和，是最
+  朴素的可解释 PRM。生产场景中可以替换为神经网络（如 step-level 分类器）。
+
+== 编译与运行
+
+[source,shell]
+----
+./scripts/build.sh
+./scripts/run.sh chapterF_reasoning -- -n 30 -k 7 -e 0.4
+----
+
+无需任何预训练权重，可独立编译运行。

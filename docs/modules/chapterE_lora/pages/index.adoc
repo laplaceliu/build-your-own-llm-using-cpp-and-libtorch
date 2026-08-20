@@ -1,0 +1,83 @@
+= 附录 E LoRA 参数高效微调
+
+本章实现 LoRA（Low-Rank Adaptation）参数高效微调，把 GPT-2 large / medium
+的 124M/355M 参数里**只有千分之二**可训练，其余被冻结。代码位于
+`chapters/chapterE_lora/`。
+
+* `include/lora.h` —— `LoRALayer` / `LinearWithLoRA` / `GPTModelWithLoRA`
+* `src/main.cpp` —— E.2~E.5 逐步演示
+
+依赖第 2/3/4/5 章（tokenizer / attention / GPTModel / dataloader）。
+
+== E.2 LoRA 的原理
+
+把 `W ∈ ℝ^(d_out × d_in)` 的更新 `ΔW` 强制为低秩分解
+`ΔW = B · A`，`A ∈ ℝ^(d_in × r)`、`B ∈ ℝ^(r × d_out)`、`r ≪ d`。前向变成
+
+  y = W·x + (B·A)·x · (α/r)
+
+其中 `α` 是与 r 同步缩放的常数（默认 `α = 2r`，等价于把 LoRA 通道 ×2）。
+训练开始时 `B = 0`，前向行为与原始 Linear 完全一致；之后只训练 `A、B` 两块
+小参数。
+
+== E.3 `LoRALayer` 与 `LinearWithLoRA`
+
+* `LoRALayer(in_dim, out_dim, rank, alpha, dropout)`：`register_parameter("A", ...)` 用
+  kaiming 初始化；`B = 0`，训练开始时 LoRA 通道对前向的贡献为 0。
+* `LinearWithLoRA(linear, rank, alpha, dropout)`：把 `linear` 注册为子模块并冻结其
+  参数；再把 `LoRALayer` 注册为 `lora`。`forward(x) = linear(x) + lora(x)`。
+* 当 `rank == 0` 时退化为纯 `Linear` wrapper（不创建 LoRA 参数），用于替换输出头。
+
+== E.4 把 GPTModel 改造为 `GPTModelWithLoRA`
+
+* `MultiHeadAttentionWithLoRA`：把 `W_query / W_key / W_value / out_proj` 全部换
+  成 `LinearWithLoRA`。
+* `FeedForwardWithLoRA`：`layers` 内的两个 Linear 也换为 `LinearWithLoRA`，GELU
+  保留。
+* `TransformerBlockWithLoRA` / `GPTModelWithLoRA`：嵌套组装，并在 out_head 上
+  调用 `replace_with_lora`。
+
+构造完成后遍历所有 `LinearWithLoRA`，冻结原 `linear` 子模块里的所有 `.parameters()`
+（已经由 `LinearWithLoRAImpl` 自动完成），只留 LoRA 的 `A / B` 可训练。
+
+== E.5 训练 / 评估 / 替换输出头
+
+`main.cpp` 演示以下流程：
+
+. 用 `ch4::GPTModel::from_pretrained(cfg)` 加载 GPT-2 large / medium（不训练）。
+. 替换 `out_head` 为 2 路分类头（`replace_out_head_for_classification`）。
+. 计算 `count_trainable_parameters`：
++
+[source,text]
+----
+[appendix-E] All     trainable = 124412928 / 773891328
+[appendix-E] LoRA    trainable =    1212416 / 773891328
+----
+. 用 AdamW 训练 LoRA 若干 epoch，`evaluate_classifier` 输出 2 路分类准确率。
+. 把输出头换回 *全参可训练* 的分类头（解冻），再次训练并对比准确率。
+. 训练完成后 `replace_module` 也能在不重建 module 的前提下切换 `out_head` 的
+  实现（LoRA / 纯 Linear）。
+
+== 编译与运行
+
+[source,shell]
+----
+./scripts/download-weights.sh medium      # GPT-2 medium 权重（1.52 GB）
+./scripts/build.sh
+./scripts/run.sh chapterE_lora
+----
+
+CPU 上 1 个 epoch 大约 1–2 分钟；建议 GPU 以观察 epoch 间准确率曲线。
+完整数据集（SST2 / IMDB）请参考 *练习 E.2*。
+
+== 移植要点
+
+* **`freeze_non_lora_parameters(model)`**：等价于遍历 `model->named_parameters()`，
+  把名字里不含 `lora_A` / `lora_B` 的 `requires_grad` 置 `false`。该函数在
+  本章作为工具函数被引用；实际冻结过程由 `LinearWithLoRAImpl` 的构造函数
+  直接完成（避免重复实现）。
+* **output head 替换**：`register_module("out_head", ...)` 不能对已经注册过的
+  子模块再调用一次，所以分类头替换要改用 `replace_module("out_head", new_head)`。
+* **正确性验证**：`B = 0` 初始化保证加载权重后第一次前向 `lora(x) = 0`，
+  与未加载 LoRA 时数值严格相等（容差 1e-6），因此可以直接用同一份预训练
+  权重启动训练。

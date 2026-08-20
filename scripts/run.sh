@@ -12,6 +12,9 @@
 #   chapter05_pretraining       [可选: epochs] 如 ./scripts/run.sh chapter05_pretraining 10
 #   chapter06_finetuning
 #   chapter07_instruction_tuning [可选: epochs]
+#   chapterD_training_loop      [附录 D 训练循环技巧]
+#   chapterE_lora               [附录 E LoRA 参数高效微调]
+#   chapterF_reasoning          [附录 F 推理增强；可选: -n -k -e]
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 

@@ -50,6 +50,10 @@
 │       ├── include/          # instruction.h（format_input/collate/加载器）
 │       ├── src/              # main.cpp（GPT-2 medium 指令微调 + Ollama 评估）
 │       └── data/             # instruction-data.json + gpt2-medium.safetensors
+├── chapters/
+│   ├── chapterD_training_loop/    # 附录 D 训练循环技巧
+│   ├── chapterE_lora/             # 附录 E LoRA 参数高效微调
+│   └── chapterF_reasoning/        # 附录 F 推理增强（CoT / SC / PRM）
 └── docs/                     # Antora 文档项目（playbook + 组件 + 模块）
     ├── playbook.yml          # 站点 playbook
     ├── antora.yml            # 组件描述
@@ -62,7 +66,10 @@
         ├── chapter04_gpt/
         ├── chapter05_pretraining/
         ├── chapter06_finetuning/
-        └── chapter07_instruction_tuning/
+        ├── chapter07_instruction_tuning/
+        ├── chapterD_training_loop/  # 附录 D 训练循环技巧
+        ├── chapterE_lora/           # 附录 E LoRA 参数高效微调
+        └── chapterF_reasoning/      # 附录 F 推理增强
 ```
 
 ## 环境要求
@@ -109,6 +116,9 @@ GPU 不到 1 分钟（~15-20 倍）。
 ./scripts/run.sh chapter05_pretraining      # 可传 epochs：run.sh chapter05_pretraining <data_dir> 10
 ./scripts/run.sh chapter06_finetuning
 ./scripts/run.sh chapter07_instruction_tuning
+./scripts/run.sh chapterD_training_loop
+./scripts/run.sh chapterE_lora
+./scripts/run.sh chapterF_reasoning             # 可传参数：run.sh chapterF_reasoning "" -n 30 -k 7 -e 0.4
 ```
 
 > 提示：`scripts/common.sh` 集中管理 `LIBTORCH_ROOT`、`CUDA_VERSION` 等路径

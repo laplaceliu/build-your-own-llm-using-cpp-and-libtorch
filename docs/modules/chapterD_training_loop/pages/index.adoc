@@ -1,0 +1,64 @@
+= 附录 D 训练循环技巧
+
+本章把第 5 章的预训练流程拆成两个模型对比演示：原始 GPTModel（随权重更新）
+和"权重被冻结"（weight-decay 跳过）的 GPTModel。前者用于演示 *conviction* 监控
+与 *gradient clipping* 的副作用，后者用于对照 *AdamW decoupled weight decay* 真的
+只把正则项施加到非嵌入可训练权重上。代码位于 `chapters/chapterD_training_loop/`。
+
+* `include/training_D.h` —— `freeze_weights_for_no_clip` / `unfreeze_all`
+* `src/main.cpp` —— 演示训练循环（conviction + 不带 weight decay 的对照）
+
+依赖第 2/3/4/5 章（tokenizer / attention / GPTModel / 评估函数）。
+
+== D.1 训练循环的样板代码
+
+完整训练循环在第 5 章 `src/main.cpp` 已经覆盖（`calc_loss_loader`、
+`evaluate_model`、`generate_and_print_sample`、`train_model_simple`）。本附录
+只补充两段与 weight decay 相关的辅助逻辑：冻结权重供`weight_decay=0` 的对照
+使用；解冻以便再次开启全参训练。
+
+== D.2 损失 / 困惑度的 conviction 监控
+
+每 100 步计算一次训练集平均 loss，与验证集 loss 一起打印：
+
+[source,text]
+----
+Ep 1 (Step 000100): Train loss 4.953, Val loss 4.910   # 与第 5 章起始值趋势一致
+Ep 1 (Step 000200): Train loss 4.366, Val loss 4.391
+...
+----
+
+== D.3 冻结模型：对照实验（不带 weight decay）
+
+`freeze_weights_for_no_clip(model)` 把所有 `.parameters()` 的 `requires_grad`
+置为 `false`，使 AdamW 即使 `weight_decay != 0` 也无法对原权重做正则衰减。
+这一对照实验的目 的是：观察在没有 weight decay 的情况下，验证集损失曲线是
+否出现比带 weight decay 时更明显的过拟合。运行后输出两份日志：
+
+[source,text]
+----
+[appendix-D] unfreeze & train full + decay... trainable = 124412928
+Ep 1 (Step 000100): Train loss 4.953, Val loss 4.910
+...
+[appendix-D] final val acc / val loss = ...
+----
+
+== 编译与运行
+
+[source,shell]
+----
+./scripts/download-data.sh                # 取得 the-verdict.txt + BPE 文件
+./scripts/download-weights.sh medium      # GPT-2 medium 权重（可复用第 5 章）
+./scripts/build.sh                        # 配置并编译全部章节
+./scripts/run.sh chapterD_training_loop
+----
+
+== 移植要点
+
+* **同一 batch 同时给两个模型用**：`train_loader.batches()` 返回的 `GPTBatch`
+  可同时给 `model` 与 `model_no_clip` 使用，无需 copy。
+* **`requires_grad=false` 的参数**：optimizer 调用 `param_groups()` 时会跳过
+  它们，从而让 `torch::optim::AdamW` 的 `weight_decay` 实际不起作用，与书
+  Python `for p in model.parameters(): p.requires_grad_(False)` 等价。
+* **CPU 训练**：本附录默认 CPU 跑 1 轮（约 1–2 分钟），便于对比两个模型权重
+  轨迹；要观察更长趋势，请把 `n_epochs` 调到 5+ 或迁到 GPU。

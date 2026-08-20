@@ -39,5 +39,12 @@ function(add_libtorch_executable target)
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF)
+  # 显式追加 torch 的 include 目录与编译选项，兼容 IDE / 子 cmake 工程
+  if(DEFINED TORCH_INCLUDE_DIRS)
+    target_include_directories(${target} PRIVATE ${TORCH_INCLUDE_DIRS})
+  endif()
+  if(DEFINED TORCH_CXX_FLAGS)
+    target_compile_options(${target} PRIVATE ${TORCH_CXX_FLAGS})
+  endif()
   target_link_libraries(${target} PRIVATE ${TORCH_LIBRARIES})
 endfunction()
