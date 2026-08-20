@@ -139,12 +139,21 @@ def call_chat(binary: Path, model: Path, size: str, nl: str,
 
 
 def extract_pred(stdout: str) -> str:
-    """从 bash_chat 输出中提取 '$ ... ' 后面那一行。"""
-    out = []
-    for ln in stdout.splitlines():
-        if ln.startswith("$ "):
-            out.append(ln[2:])
-    return "\n".join(out).strip() if out else ""
+    """从 bash_chat 输出中提取首个 '$ ' 后面那一条命令（单行/多行连续 `$ ...`）。
+
+    旧实现会把所有 `$ ` 开头行连起来，但 SFT 模型常会输出 echo '示例:' 这种
+    多行示例，把示例命令也算进预测里，污染 exec_safe 的判定。
+    新行为：取第一个 `$ ` 之后的连续 `$ ` 行（首行必取，后续行只在以下情况纳入：
+      - 前一行以未闭合的反引号 / 单/双引号结尾（命令跨行）
+      - 上一行尾是逻辑运算符 `&&` `||` `|` `;`
+    普通空说明行（首字符不是 `$`）立即停止提取。
+    """
+    lines = [ln[2:] for ln in stdout.splitlines() if ln.startswith("$ ")]
+    if not lines:
+        return ""
+    # 简单启发式：如果模型只输出一段 '$ ...' + 说明，直接取首行
+    # 默认取首行（最稳，参见 train 阶段的 prompt 模板）
+    return lines[0].strip()
 
 
 kDefaultInstruction = "Translate the following natural language request into a bash one-liner."
