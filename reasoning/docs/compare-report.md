@@ -1,6 +1,6 @@
 # reasoning/ — 推理模型对比实验报告
 
-生成时间: 2026-08-20 15:16:47
+生成时间: 2026-08-20 15:39:43
 
 ## 1. 方法 × 规模 × 策略 三维对比 (GSM8K test, 50 题)
 
@@ -10,6 +10,10 @@
 | SFT-GSM-small-greedy | vote | 50 | 0.020 | 0.980 | 2595.9 | 129.8 |
 | SFT-GSM-medium-greedy | greedy | 50 | 0.100 | 0.960 | 1180.9 | 59.0 |
 | SFT-GSM-medium-greedy | vote | 50 | 0.040 | 1.000 | 5552.0 | 277.6 |
+| RL-medium-greedy | greedy | 50 | 0.080 | 0.980 | 997.7 | 49.9 |
+| RL-medium-vote | vote | 50 | 0.000 | 1.000 | 4758.1 | 237.9 |
+| RL-medium-greedy | greedy | 50 | 0.080 | 0.980 | 997.7 | 49.9 |
+| RL-medium-greedy | vote | 50 | 0.000 | 1.000 | 4758.1 | 237.9 |
 
 ## 2. 训练阶段耗时 (尾段)
 
@@ -39,6 +43,19 @@
 [sft_train] 已保存模型: /home/maigi/Source/github.com/laplaceliu/build-your-own-llm-using-cpp-and-libtorch/reasoning/data/reasoning_medium_sft_gsm.pt
 ```
 
+### rl_medium.log: `/home/maigi/Source/github.com/laplaceliu/build-your-own-llm-using-cpp-and-libtorch/reasoning/data/rl_medium.log`
+
+```
+  [best sample @ step 95]
+  Below is an instruction that describes a task. Write a response that appropriately completes the request.  ### Instruction: Holly needs to take 2 insulin pills per day, 3 blood pressure pills per day, and twice as many anticonvulsants as blood pressure pills each day. How many pills does Holly take in a week?  ### Response: think  Holly takes 3 x 2 = <<3*2=6>>6 insulin pills every day. She takes 3...
+[rl_train] step=96 mean_reward=0.5 loss=0
+[rl_train] step=97 mean_reward=0.5 loss=0
+[rl_train] step=98 mean_reward=0.5 loss=0
+[rl_train] step=99 mean_reward=0.5 loss=0
+[rl_train] 训练完成, 总耗时=208s
+[rl_train] 已保存: /home/maigi/Source/github.com/laplaceliu/build-your-own-llm-using-cpp-and-libtorch/reasoning/data/reasoning_medium_rl_gsm.pt
+```
+
 ## 3. 观察与方法结论
 
 **规模对比 (small vs medium)**：medium 在 greedy 上准确率 10% vs small 0%，
@@ -55,10 +72,16 @@ fmt 几乎都是 96%-100%，说明 SFT 阶段已把 think/answer 的格式约束
 medium 1 epoch 用 335 秒 (3150 步, 1.4M tokens, batch 减半)。
 GPU 利用率均 99-100%，RTX 3090/4090/A100 级别 GPU 跑通单次训练。
 
+**RL 训练结果**：
+- 100 步 GRPO (batch=1, group=2, lr=1e-6) 耗时 208 秒，GPU 99%。
+- greedy: acc=8% (vs SFT 10%)，略降；vote: acc=0% (vs SFT 4%)，退化。
+- 原因分析：① lr=1e-6 太低，策略梯度更新幅度小；② 100 步不够收敛；③ group=2 样本量小，advantage 估计方差大。
+- 建议：lr 提高到 1e-5，group 提高到 4-8，步数提高到 500+，并加 KL 惩罚项防止策略漂移。
+
 **已知限制**：
 - 只跑了 1 epoch + GSM8K 单源 7473 条，远少于附录 F 中 Sky-T1-17k 17k 条。
 - 答错的样本多数属于『模型把『half』理解成『twice』这种基础算术偏差』。
-- GRPO RL 训练未在本轮实际运行；流水线 (rl_train) 已就绪，需更多 GPU 时间。
+- RL 训练已跑通但效果不佳，需调参后重跑。
 
 ## 4. 复现命令
 
@@ -102,10 +125,30 @@ CUDA_VISIBLE_DEVICES=0 reasoning/build/eval/eval_math \
   --max_new 400 --limit 50 \
   --out reasoning/data/eval_full.csv
 
+# 训练 RL (GRPO)
+CUDA_VISIBLE_DEVICES=0 reasoning/build/train/rl_train \
+  --data reasoning/data/processed/rl-train.json \
+  --size medium --init reasoning/data/reasoning_medium_sft_gsm.pt \
+  --out reasoning/data/reasoning_medium_rl_gsm.pt \
+  --max_steps 100 --batch 1 --group 2 --max_new 256 \
+  --lr 1e-6 --temperature 0.9 --top_k 50 \
+  --w_acc 0.5 --w_fmt 0.5 --seed 42
+
+# 评测 RL 模型
+CUDA_VISIBLE_DEVICES=0 reasoning/build/eval/eval_math \
+  --data reasoning/data/processed/eval-test.json \
+  --size medium --model reasoning/data/reasoning_medium_rl_gsm.pt \
+  --strategies greedy,vote --names RL-medium-greedy,RL-medium-vote \
+  --max_new 400 --limit 50 \
+  --out reasoning/data/eval_rl.csv
+
 # 生成报告
 python3 reasoning/scripts/report.py \
   --csv reasoning/data/eval_full.csv \
   --csv reasoning/data/eval_medium.csv \
+  --csv reasoning/data/eval_rl.csv \
   --time-log reasoning/data/sft_gsm.log \
+  --time-log reasoning/data/sft_medium.log \
+  --time-log reasoning/data/rl_medium.log \
   --out reasoning/docs/compare-report.md
 ```
