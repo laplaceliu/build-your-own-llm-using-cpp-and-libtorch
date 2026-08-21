@@ -160,8 +160,9 @@ def expand_one_sample(sample: dict, fallback_system: str | None) -> list[dict]:
     elif isinstance(raw_tools, str) and raw_tools.strip():
         try:
             arr = json.loads(raw_tools)
-            for t in arr:
-                tools.append(normalize_tool(t))
+            if arr is not None:
+                for t in arr:
+                    tools.append(normalize_tool(t))
         except json.JSONDecodeError:
             pass
 

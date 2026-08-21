@@ -17,13 +17,13 @@ set -euo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SELF_DIR}/.." && pwd)"
 SIZE="${SIZE:-medium}"
-EPOCHS="${EPOCHS:-3}"
+EPOCHS="${EPOCHS:-5}"
 BATCH="${BATCH:-1}"          # gpt-toolcall: 默认 batch=1（tool descriptions 让 prompt 很长 + medium 24 layers 容易 OOM）
 LR="${LR:-5e-5}"
 OUT_DIR="${ROOT}/data"
 WEIGHTS_DIR="${ROOT}/../chapters/chapter07_instruction_tuning/data"
 WEIGHTS="${WEIGHTS_DIR}/gpt2-medium.safetensors"
-OUT_NAME="toolcall-sft-${SIZE}.pth"
+OUT_NAME="toolcall-sft-v2-${SIZE}.pth"
 LOG="${ROOT}/logs/train-${SIZE}-$(date +%Y%m%d-%H%M%S).log"
 mkdir -p "${ROOT}/logs" "${WEIGHTS_DIR}"
 
@@ -46,7 +46,7 @@ echo "[$(date)] 输出到: ${OUT_DIR}/${OUT_NAME}"
 echo "[$(date)] 日志: ${LOG}"
 echo "[$(date)] PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF}"
 ./scripts/run.sh train \
-    --data "${ROOT}/data/toolcall-data.json" \
+    --data "${ROOT}/data/toolcall-data-v2.json" \
     --weights "${WEIGHTS}" \
     --size "${SIZE}" \
     --epochs "${EPOCHS}" \
