@@ -1,96 +1,564 @@
-= 第 1 章 Hello LibTorch：张量基础
+= Chapter 01 · Hello LibTorch：全书 LibTorch C++ 前置知识
+:sectnums:
+:sectnumlevels: 3
 
-本章目标：
+本章是后续章节（ch02~ch07、chD、chE、chF、chG）都会反复用到的 LibTorch C++ API 的"前置知识沙盘"。
+阅读完本章后遇到任何 `tensor.matmul()`、`register_module("xx", ...)`、`AdamWOptions` 之类时，都应能在脑中直接映出其作用。
 
-* 验证 LibTorch 环境可编译、可运行
-* 认识 `torch::Tensor`：创建张量、查看形状 / 数据类型 / 设备
-* 完成第一次矩阵乘法
+[NOTE]
+====
+本章配套 demo 程序位于 `chapters/chapter01_hello_torch/main.cpp`。
+该程序是自包含的、可独立编译运行的最小单元，覆盖了后续章节用到的全部高频 LibTorch API。
+建议把它当作 "LibTorch REPL" 来随意跳转、修改、打印。
+====
 
-对应代码：`chapters/chapter01_hello_torch/main.cpp`
+== 1.1 头文件与命名空间
 
-== 1.1 代码讲解
-
-`torch/torch.h` 是 LibTorch C++ API 的主头文件；`torch/cuda.h` 提供 CUDA 可用性查询。
+整本书里主要用到三个头文件：
 
 [source,cpp]
 ----
 #include <torch/cuda.h>
 #include <torch/torch.h>
+#include <c10/util/Optional.h>
+----
 
-#include <iostream>
+* `torch/torch.h` —— _总头文件_，包含张量、nn 模块、优化器、序列化等 _绝大部分_ C++ API。
+* `torch/cuda.h` —— 提供 `torch::cuda::is_available()`、`is_bf16_supported()` 等运行时检测。
+* `c10/util/Optional.h` —— 提供 `c10::optional<T>`，相当于 `std::optional` 的早年代替品。
 
-int main() {
-  // 创建两个张量：x 为 2x3，w 为 3x1
-  auto x = torch::tensor({{1.0f, 2.0f, 3.0f}, {4.0f, 5.0f, 6.0f}});
-  auto w = torch::tensor({{1.0f}, {1.0f}, {1.0f}});
+随用到随引入的还有：
 
-  // 矩阵乘法 x @ w -> (2,1)
-  auto y = x.matmul(w);
+[options="header",cols="2,4"]
+|===
+|头文件 |出现处（章节）
 
-  // 张量元信息：形状 / 数据类型 / 设备
-  std::cout << "shape = " << x.sizes() << ", dtype = " << x.dtype()
-            << ", device = " << x.device() << "\n";
+| `<torch/serialize.h>`         | `torch::save / torch::load`（[ch03]/[ch04] 模型保存）
+| `<torch/script.h>`            | ch02 中用 TorchScript 包装自己的 tokenizer / dataloader（可选）
+| `<torch/optim/adamw.h>`       | AdamW 显式构造（[ch07]）
+| `<torch/jit.h>`               | `torch::jit::load`（IF 版本 / `gpt-toolcall` 中加载 HF 模型）
+| `<torch/nn/parallel/...>`     | 数据并行（[ch05] 配 `DataParallel`，chG 的 `DistributedDataParallel`）
+| `<torch/csrc/api/include/torch/autograd.h>` | `torch::NoGradGuard`（[chD] / [chG]）
+|===
 
-  std::cout << "CUDA available: "
-            << (torch::cuda::is_available() ? "yes" : "no") << "\n";
-  return 0;
-}
+== 1.2 Device：CPU / CUDA 切换
+
+后续章节每个 `main.cpp` 几乎都按以下固定模式处理 device：
+
+[source,cpp]
+----
+torch::Device device = torch::cuda::is_available()
+                           ? torch::Device(torch::kCUDA)
+                           : torch::Device(torch::kCPU);
+model->to(device);                              // 把模型参数 / buffer 全部搬到 device 上
+auto x = torch::randn({2, 3}).to(device);        // 输入张量也搬到 device
 ----
 
 要点：
 
-* `torch::tensor(...)` 从初始化列表创建张量，自动推断形状与数据类型。
-* `tensor.sizes()` 返回 `IntArrayRef`，打印为 `[2, 3]`。
-* `tensor.device()` 显示张量所在设备（`cpu` / `cuda:0`）。
-* `torch::cuda::is_available()` 检查 CUDA 是否可用——在 GPU 版 LibTorch 下通常返回 `yes`。
-
-== 1.2 编译运行
-
-使用统一脚本（见仓库根 README）：
-
-[source,shell]
+* `torch::Device` 是一个轻量句柄，复制无开销。
+* `kCPU` / `kCUDA` 是枚举值，相当于 `torch::Device::Type::CPU / CUDA`。
+* **必须**对 `model` 和 `input` 做同样的 `.to(device)`，否则会触发 `Expected all tensors to be on the same device` 错误（本章 demo 实战已踩到）。
+* 教学与书中复现脚本里几乎都额外关 TF32，保证与 Python `float32` 同精度：
++
+[source,cpp]
 ----
-./scripts/build.sh                 # 配置并编译全部章节
-./scripts/run.sh chapter01_hello_torch   # 设置环境并运行
+at::globalContext().setAllowTF32CuBLAS(false);
 ----
 
-== 1.3 预期输出
+== 1.3 Tensor 工厂函数
 
-[source,text]
+=== 1.3.1 由数据直接构造
+
+[source,cpp]
 ----
+auto x = torch::tensor({{1.0f, 2.0f, 3.0f},
+                        {4.0f, 5.0f, 6.0f}});        // 自动推断 (2,3) float32
+auto ids = torch::tensor(std::vector<int64_t>{101, 102, 103}, torch::kLong);
+----
+
+`torch::tensor(initializer_list|std::vector, dtype=optional)` 接收具体的数值。
+注意：**索引型张量必须为 `kLong`**（Embedding 的输入、attention 的 mask、Tokenizer 输出都是 `kLong`）。
+
+=== 1.3.2 形状 + 默认值的工厂
+
+[options="header",cols="2,5"]
+|===
+|函数 |用途与示例
+
+|`torch::empty(sizes, opts)`  |不初始化（用于需要"立刻覆盖"的占位张量）
+|`torch::zeros(sizes, opts)`  |全 0：bias 初始化、mask、padding
+|`torch::ones(sizes, opts)`   |全 1：广播型常量
+|`torch::full(sizes, value)`  |填常量值
+|`torch::arange(start, end)`  |整型序列，常用于 `position_ids = torch::arange(0, seq_len)`
+|`torch::rand(sizes)`         |`[0,1)` 均匀分布
+|`torch::randn(sizes)`        |标准正态分布：权重初始化的最爱
+|===
+
+=== 1.3.3 从裸指针构造
+
+[source,cpp]
+----
+auto t = torch::from_blob(ptr, {B, H, D}, torch::kFloat);
+----
+
+`from_blob` 不会复制数据——非常适合 chG 自回归推理时复用 CPU 端的 KV cache 内存。
+**注意**：所有权仍属于调用方；转 `to/clone` 才会被 LibTorch 接管。
+
+== 1.4 张量属性
+
+[source,cpp]
+----
+x.sizes()             // IntArrayRef，{B, H, D, ...}
+x.size(dim)           // 单维大小
+x.numel()             // 总元素数
+x.dtype()             // kFloat / kLong / kInt / kBool
+x.device()            // device 句柄
+x.is_contiguous()     // 是否连续存储
+x.requires_grad()     // 是否在 autograd 图里
+----
+
+== 1.5 形状变换：`reshape / view / transpose / permute`
+
+[source,cpp]
+----
+auto a = torch::arange(12, torch::kFloat).reshape({3, 4});   // (3,4)
+auto b = a.transpose(0, 1);                                  // (4,3)  view
+auto c = a.permute({1, 0});                                  // (4,3)  view
+auto d = a.view({-1});                                       // 自动推维度
+auto e = a.unsqueeze(0);                                     // 加一维
+auto f = e.squeeze(0);                                       // 去一维
+auto g = a.flatten(0, 1);                                    // 合并若干连续维
+----
+
+要点：
+
+* `view` 与 `reshape` 类似，但 `view` 要求张量 **连续**（`is_contiguous()==true`）；
+  在做完 `transpose / permute` 后想继续 `view`，必须先 `.contiguous()`。
+* `transpose(d1, d2)` 只交换两个轴，是便宜的视图；`permute({...})` 可以任意重排轴序，常用在多头注意力中：
++
+[source,cpp]
+----
+// (B, H, T, D) 多头重排为 (B, T, H, D)
+auto y = x.transpose(1, 2);                       // (B, T, H, D)
+----
+
+== 1.6 张量运算
+
+=== 1.6.1 矩阵与元素运算
+
+[source,cpp]
+----
+auto y = x.matmul(w);                          // @ → 与 np.matmul 语义一致
+auto z = x.mul(y);   // 或 x * y              // 逐元素
+auto z = x.add(y);   // 或 x + y
+auto z = x - y;
+auto z = x.pow(2);                             // x^2
+----
+
+`matmul` 在 2D 是 `x @ y`，在 3D+ 是按最后两维做批量矩阵乘。`.bmm()` 显式表达 batch matmul。
+
+=== 1.6.2 `softmax / masked_fill / argmax / topk`
+
+[source,cpp]
+----
+auto p = torch::softmax(x, /*dim=*/-1);                                // 把最后维做成概率分布
+auto m = x.masked_fill(mask == 0, -1e9);                               // padding / causal
+auto k = x.argmax(/*dim=*/-1);                                         // 每行最大下标
+auto v = std::get<0>(x.topk(/*k=*/2, /*dim=*/-1));                     // 每行 top-k（值）
+----
+
+* `masked_fill`：**整个 attention 都靠它**——pad 位 / 因果位 / 全 0 区间，都填 `-1e9` 后 `softmax` 就变 0。
+* `topk` 返回 `std::tuple<Tensor, Tensor>`，分别是 (values, indices)。
+* `argmax / topk` 在 `gpt-toolcall` / chG 自回归生成里用来选下一个 token id。
+
+=== 1.6.3 拼接与堆叠
+
+[source,cpp]
+----
+auto ab = torch::cat({a, b}, /*dim=*/0);        // 沿已有维度拼
+auto st = torch::stack({a, b}, /*dim=*/0);      // 新增一维再叠
+----
+
+`ch06` 拼接上下文向量、`chE` LoRA 切分训练样本、`chG` 把多个候选回应的 logits 拼起来都用 `cat`。
+
+== 1.7 自动求导（Autograd）
+
+[source,cpp]
+----
+auto x = torch::tensor({1.0, 2.0, 3.0}, torch::kFloat).requires_grad_(true);
+auto y = (x * x).sum();
+y.backward();
+std::cout << x.grad();                            // → [2, 4, 6]
+
+{
+    torch::NoGradGuard no_grad;                   // 关闭 autograd
+    auto z = (x * 2).matmul(w);                   // 推理 / 评估
+}
+----
+
+五件事非常常用：
+
+* `.requires_grad_(true)` —— 让一个 `Tensor` 参与 autograd；
+* `.detach()` —— 把变量从图中分离（保留数值，但不参与梯度传播）；
+* `.set_requires_grad(false)` —— 冻结层（LoRA / phase 2 阶段冻结 base model）；
+* `tensor.backward()` —— 反向求导（标量 → 直接调用；向量 → 通常先 `.sum()` 或传 `gradient=`）；
+* `torch::NoGradGuard no_grad;` —— 在作用域内临时关闭 autograd，**推理与 unit test 必备**。
+
+== 1.8 优化器：训练循环的"四步走"
+
+后续每章都会按以下模板跑训练循环：
+
+[source,cpp]
+----
+for (int epoch = 0; epoch < n_epochs; ++epoch) {
+    for (auto& batch : loader) {
+        batch.data = batch.data.to(device);
+        batch.target = batch.target.to(device);
+
+        opt.zero_grad();                                  // ① 清零
+        auto logits = model->forward(batch.data);        // ② forward
+        auto loss = torch::nn::functional::cross_entropy( // ③ 计算 loss
+                          logits, batch.target);
+        loss.backward();                                  // ④ 反向
+        opt.step();                                       // ⑤ 更新
+        // scheduler.step();                              // 可选：余弦退火
+    }
+}
+----
+
+最常见的两个优化器写法：
+
+[source,cpp]
+----
+// AdamW：首选，权重衰减与梯度解耦，书里 gpt-pretrain / SFT 全用它
+torch::optim::AdamW opt(
+    model->parameters(),
+    torch::optim::AdamWOptions(3e-4).betas({0.9, 0.95}).weight_decay(0.01));
+----
+
+[source,cpp]
+----
+// SGD：ch05 pretrain 也常写"warmup 期"的 torch::optim::SGD，
+// 用来观察参数动量是否稳
+torch::optim::SgdOptions sgd_opts(1e-2);
+sgd_opts.momentum(0.9);
+torch::optim::SGD sgd(model->parameters(), sgd_opts);
+----
+
+学习率的两种调整方式：
+
+[source,cpp]
+----
+double lr = opt.param_groups().front().options().get_lr();   // 查
+opt.param_groups().front().options().set_lr(1e-4);           // 改
+// 多 param_group 时（如 LoRA），遍历 opt.param_groups() 各自 set_lr。
+----
+
+[NOTE]
+====
+`Optimizer` 类本身 _没有_ `get_lr/set_lr` 公共方法——
+必须通过 `param_groups()[i].options()` 拿到 `OptimizerOptions` 后再调。
+需要 `betas / weight_decay` 等具体字段时，再 `static_cast<AdamWOptions&>(options)` 即可。
+====
+
+== 1.9 nn::Module：自定义层的标准姿势
+
+整个 `gpt-sft` 的所有自定义层（`LayerNorm`、`GELU`、`MultiHeadAttention`、`TransformerBlock`、`GPTModel` ……）都长这样：
+
+[source,cpp]
+----
+class LayerNormImpl : public torch::nn::Module {
+ public:
+    explicit LayerNormImpl(int64_t emb_dim, double eps = 1e-5) {
+        scale_ = register_parameter(
+            "scale", torch::ones({emb_dim}));
+        shift_ = register_parameter(
+            "shift", torch::zeros({emb_dim}));
+        eps_ = eps;
+    }
+    torch::Tensor forward(torch::Tensor x) {
+        auto mean = x.mean(/*dim=*/-1, /*keepdim=*/true);
+        auto var  = x.var (/*dim=*/-1, /*keepdim=*/true, /*unbiased=*/false);
+        return (x - mean) / torch::sqrt(var + eps_) * scale_ + shift_;
+    }
+ private:
+    torch::Tensor scale_, shift_;
+    double eps_;
+};
+TORCH_MODULE(LayerNorm);   // 生成 class LayerNorm : ModuleHolder<LayerNormImpl>
+----
+
+要点：
+
+* `*Impl` 类继承 `torch::nn::Module`；由 `TORCH_MODULE(LayerNorm)` 宏自动生成 `LayerNorm : ModuleHolder<LayerNormImpl>` 这个"指针包装类"——它**等价于 `shared_ptr<LayerNormImpl>`**，可以直接当指针用。
+* 模块注册一律用：
+** `register_module("name", sub_module_ptr)` —— 注册子模块 / 子层；
+** `register_parameter("name", tensor)` —— 注册可训练参数；
+** `register_buffer("name", tensor)` —— 注册随模型一起走的常量张量（不参与梯度，但 `.to(device)` 时会一起搬走）。
+* `forward(Tensor)` 写计算；外部用 `model(x)` 或 `model->forward(x)` 都行。
+* 子模块访问：`model->fc_->weight.sizes()` （`fc_` 是 `register_module` 返回的 `shared_ptr`）。
+* `model->train();` / `model->eval();` 切换 Dropout / BN 等的运行模式。
+* `model->to(device)` 一次性把"参数 + buffer + 子模块"全部搬到目标设备。
+* **整个 `*Impl` 类 + `TORCH_MODULE(Name)` 必须放在全局命名空间**，不要放进匿名 namespace——否则 `torch::save / torch::load` 的 ADL 关联会断。
+
+== 1.10 已有 nn 模块
+
+== 1.10 nn 模块一览
+
+[options="header",cols="2,5"]
+|===
+|类 |常见用法
+
+|`torch::nn::Linear(in, out, bias=true)` |`nn.Linear(d_model, 4*d_model)` —— FFN 第一层
+|`torch::nn::Embedding(num_embed, dim)` |token id 表 → 嵌入向量；`embed.weight` 是 `(V, D)`
+|`torch::nn::Dropout(p)` |正则化
+|`torch::nn::Sequential(layer1, layer2, ...)`|把若干"无状态"层堆成一个子模块
+|`torch::nn::MultiheadAttention` / `TransformerEncoderLayer` |可选封装；本书一般会自己写以与 Python 实现数值对齐
+|===
+
+这些模块本身也是"一个 `nn::Module` 子类"，所以同样能 `register_module(...)` 挂到自己的大模型下。
+
+== 1.10 模型遍历
+
+[source,cpp]
+----
+for (const auto& p : model->parameters())            // 抽象迭代器 → Tensor&
+    std::cout << p.sizes() << "\n";
+
+for (const auto& np : model->named_parameters(true))  // (name → Tensor)（递归）
+    std::cout << np.key() << ": " << np.value().sizes() << "\n";
+
+for (const auto& nm : model->named_modules())         // (name → Module)（递归）
+    std::cout << nm.key() << "\n";
+----
+
+典型场景：
+
+* `model->parameters()` —— 直接传给 `AdamW` / `SGD` 的优化器；
+* `named_parameters(true)` —— **冻结/解冻某个模块**（LoRA）：
++
+[source,cpp]
+----
+for (auto& np : model->named_parameters(true)) {
+    if (np.key().find("lora_") == std::string::npos) {  // 不以 lora_ 开头的
+        np.value().set_requires_grad(false);
+    }
+}
+----
+* `named_modules()` —— 给特定层打 hook、统计激活值、做量化感知。
+
+== 1.11 损失与 functional
+
+[source,cpp]
+----
+// 分类 / 语言模型的标配
+auto loss = torch::nn::functional::cross_entropy(
+    logits.reshape({-1, V}), targets.reshape({-1}));
+// 对应 PyTorch nn.functional.cross_entropy(logits.view(-1, V), target.view(-1))
+----
+
+其它常用 functional：
+
+* `mse_loss(input, target, c10::optional<int64_t> reduction)`
+* `softmax(input, dim)` / `log_softmax(input, dim)`
+* `relu(input, inplace=false)` / `gelu(input)`
+* `dropout(input, p, training=true)`
+
+如果想脱离 `functional` 命名空间直接调用，可以这样：
+
+[source,cpp]
+----
+auto y = torch::softmax(logits, /*dim=*/-1);
+auto y = torch::log_softmax(logits, /*dim=*/-1);
+----
+
+== 1.12 序列化：保存 / 加载整模型
+
+[source,cpp]
+----
+{
+    torch::NoGradGuard no_grad;                         // 保存时务必 no_grad
+    torch::save(model, "model.pt");
+}
+
+auto model_loaded = LayerNorm(/*emb_dim=*/128);         // 用相同的 *Impl* 重新构造
+torch::load(model_loaded, "model.pt");
+----
+
+* `torch::save / torch::load` 是 _整模型_ 的"傻瓜"序列化：自动递归所有注册过的 parameter / buffer / 子模块。
+* 反序列化时 `*必须*` 用与保存时相同的 `*Impl` 类，否则会因缺少字段而抛异常。
+* 这是 ch06 微调与 chG 推理入口处复现权重的方式。
+* ch02 自己实现的 safetensors-like 路径用的是 `tensor.save(stream)` / `tensor.load(stream)`，但对模型对象请用 `torch::save / load`。
+
+== 1.13 训练循环模板
+
+后续章节所有训练脚本本质都是下面这段的拷贝：
+
+[source,cpp]
+----
+int main() {
+    torch::manual_seed(123);
+    torch::Device device = torch::cuda::is_available() ? torch::kCUDA : torch::kCPU;
+
+    Dataset dataset(/*...*/);
+    DataLoader loader(dataset, /*batch_size=*/2, /*shuffle=*/true);
+
+    auto model = GPTModel(/*cfg*/);
+    model->to(device).train();
+
+    auto opt = torch::optim::AdamW(
+        model->parameters(),
+        torch::optim::AdamWOptions(3e-4).betas({0.9, 0.95}).weight_decay(0.1));
+
+    for (int epoch = 0; epoch < n_epochs; ++epoch) {
+        for (auto& batch : *loader) {
+            auto x = batch.data.to(device);
+            auto y = batch.target.to(device);
+
+            opt.zero_grad();
+            auto loss = compute_loss(model, x, y);
+            loss.backward();
+            opt.step();
+        }
+    }
+    torch::save(model, "out.pt");
+}
+----
+
+== 1.14 `c10::optional` 与 `TensorOptions`
+
+很多函数签名里的可选参数都用 `c10::optional<T>` 表示"传 = 启用 / 不传 = 关闭"：
+
+[source,cpp]
+----
+c10::optional<int64_t> maybe_topk = c10::nullopt;        // 关闭
+if (condition) maybe_topk = 50;
+auto tk = maybe_topk.has_value() ? maybe_topk.value() : -1;
+----
+
+`TensorOptions` 用来一次性描述 dtype / device / requires_grad：
+
+[source,cpp]
+----
+auto opts = torch::TensorOptions().dtype(torch::kFloat)
+                                       .device(device)
+                                       .requires_grad(true);
+auto w = torch::randn({768, 4 * 768}, opts);
+----
+
+这套写法在 ch04 的 `MultiHeadAttention` / `FeedForward` 内部也常出现。
+
+== 1.15 全书 LibTorch API 对照速查表
+
+下表把后续章节实际使用过的关键 LibTorch API 聚合到本章阅读一遍，方便"按名词反查"。
+
+[options="header",cols="2,3"]
+|===
+|主题 |API
+
+|设备 |`torch::cuda::is_available`、`torch::Device(kCUDA/kCPU)`、
+       `tensor.to(device)`、`model->to(device)`、`setAllowTF32CuBLAS(false)`
+|张量创建 |`torch::tensor`、`empty`/`zeros`/`ones`/`full`、
+        `arange`、`rand`、`randn`、`from_blob`
+|形变 |`reshape`、`view`、`transpose`、`permute`、`contiguous`、
+      `unsqueeze`、`squeeze`、`flatten`
+|属性 |`sizes()`、`size(dim)`、`numel()`、`dtype()`、`device()`、
+      `is_contiguous()`、`requires_grad()`、`is_cuda()`
+|运算 |`matmul`、`add`/`sub`/`mul`/`div`、`pow`、`norm`、`mean`/`sum`/`var`、
+      `softmax`、`log_softmax`、`relu`、`gelu`、`masked_fill`、
+      `topk`、`argmax`、`gather`、`index_select`、`stack`、`cat`、
+      `multinomial`
+|类型转换 |`tensor.to(dtype)`、`tensor.to(kCPU)`、
+           `tensor.detach()`、`tensor.set_requires_grad(bool)`
+|自动求导 |`requires_grad_(true)`、`backward()`、`grad()`、
+          `torch::NoGradGuard`
+|nn 模块 |`nn::Linear`、`nn::Embedding`、`nn::Dropout`、
+         `nn::Sequential`、`register_module / parameter / buffer`、
+         `TORCH_MODULE(Name)`
+|functional |`nn::functional::cross_entropy`、`nn::functional::mse_loss`、
+            `nn::functional::softmax`、`nn::functional::relu`
+|优化器 |`optim::AdamW(Options(...).betas(...).weight_decay(...))`、
+       `optim::SGD`、`zero_grad`、`step`、
+       `param_groups()[i].options().get_lr/set_lr`
+|遍历 |`parameters()`、`named_parameters(true)`、`named_modules()`、
+     `buffers()`、`modules()`
+|序列化 |`torch::save`/`torch::load`（整 model）、
+       `tensor.save(stream)` / `tensor.load(stream)`
+|并行 |`nn::parallel::DataParallel(model, device_ids)`、
+      `DistributedDataParallel`（chG）
+|JIT |`torch::jit::load(path)` —— `gpt-toolcall` 加载 HF 权重
+|容器 |`c10::optional<T>`、`TensorOptions`、
+      `torch::nn::Sequential`、`torch::nn::ModuleList`
+|===
+
+== 1.16 全书 API → 章节反查表
+
+下表反过来：每个后续章节里 _最显著_ 出现过的 LibTorch 写法，方便按章节定位。
+
+[options="header",cols="2,3,5"]
+|===
+|章节 |文件名 |典型 API（除 §1.1~§1.14 已有之外）
+
+|ch02_text_data     |`main.cpp`                      |`torch::Tensor::save(stream)`/`load(stream)`（自写 safetensors-like）、Embedding 查表 + `masked_fill` 构造 padding mask
+|ch03_attention    |`ch03_Attention.cpp`            |`matmul` + `softmax(...,dim=-1)` 写 scaled dot-product、`TensorOptions(requires_grad=true)` 封装带参数张量
+|ch04_gpt          |`ch04_GPTModel.{h,cpp}`         |`register_module("att", ...)` 嵌套 `MultiHeadAttention`，`TORCH_MODULE(LayerNorm)`、`register_buffer("pos_emb", ...)`、`register_parameter("name", ...)`
+|ch05_pretraining  |`ch05_pretrain_gpt2.py`         |`AdamWOptions(...).weight_decay(...)`、cosine LR、`parameters()` 传给 optimizer、`state_dict`/`load_state_dict`、Top-K、temperature
+|ch06_finetuning   |`ch06_finetune_review.py`       |`set_requires_grad(false)` 冻结层、`Module.named_parameters(true)`、`cross_entropy(logits.view(-1,V), target.view(-1))`
+|ch07_instruction  |`ch07_sft_alpaca.py`            |pad/eos mask、`AdamWOptions(2e-5)`、early-stop via `valid_loss`、`top_p` / `top_k` 采样 (`multinomial`)
+|chD_training_loop |`chD_main.cpp`                  |手写训练循环 + `NoGradGuard` 验证集 eval、`scheduler.step` 余弦退火、`torch::save / load` 模型
+|chE_lora          |`chE_main.cpp`                  |`**LoRA**: 冻结 base model + 注入低秩 Linear`（patch 现有 `nn::Linear` 实现）、`for (auto& np : named_parameters(true)) { np.value().set_requires_grad(np.key().rfind("lora_", 0) == 0); }`
+|chF_reasoning     |`chF_main.cpp`                  |把 `GPTModel` 装载到生成器 / 评估器、`generate()` / `sample()`、`Temperature`、`top-k`、`argmax`
+|chG_reasoning_model |`chG_main.cpp`                |`generate_loop` 闭环：`argmax → embedding → forward → softmax → argmax`、可与 `jinja2`/`Qwen` 工具对话协议互转
+|===
+
+== 1.17 编译 & 运行
+
+[source,bash]
+----
+mkdir -p build/chapter01 && cd build/chapter01
+cmake ../../chapters/chapter01_hello_torch -DTORCH_ROOT=/opt/libtorch
+make -j
+./chapter01_hello_torch
+----
+
+预期输出（节选）：
+
+....
 === Chapter 01: Hello LibTorch ===
 Torch version: 2.13.0
-x:
- 1  2  3
- 4  5  6
-[ CPUFloatType{2,3} ]
-...
+
+----- A. Device & Global Settings -----
 CUDA available: yes
-----
+Using device: cuda
 
-== 1.4 独立构建本章
+----- B. Tensor Factories -----
+x  shape=[2, 3] dtype=float device=cpu
+rng: ...
 
-每一章都是独立的 CMake 工程，也可以脱离顶层单独构建：
+----- E. Autograd -----
+y = sum(x*x) ; grad at x: 2 4 6
 
-[source,shell]
-----
-cmake -S chapters/chapter01_hello_torch \
-      -B chapters/chapter01_hello_torch/build \
-      -DCMAKE_CXX_COMPILER=/usr/bin/g++-11
-cmake --build chapters/chapter01_hello_torch/build -j$(nproc)
-----
+----- H. Optimizer (AdamW) -----
+initial lr=0.001, betas=0.9,0.95, wd=0.01
+one train step loss=...
+....
 
-== 1.5 GPU 加速
+[NOTE]
+====
+README 给出了更"一体化"的编译与外部依赖说明，本章只演示最小化命令。
+如果使用 Conda + `libtorch=2.3.0`（本书推荐版本），可改为：
+`cmake ../../chapters/chapter01_hello_torch -DCMAKE_PREFIX_PATH=$CONDA_PREFIX`。
+====
 
-程序自动检测 CUDA（`torch::cuda::is_available()`），可用时张量在 GPU 上计算：
+== 1.18 小结
 
-[source,text]
-----
-CUDA available: yes
-Using device: cuda:0
-x:
- 1  2  3
- 4  5  6
-[ CUDAFloatType{2,3} ]       # CPU 时为 CPUFloatType
-----
+阅读完本章后，应能：
 
+* 不查文档写出 `torch::softmax(x, dim)`、`x.masked_fill(mask, -1e9)`、`tensor.to(device)`。
+* 解释 `register_module` / `register_parameter` / `register_buffer` 的区别与适用场景。
+* 把 `AdamWOptions(lr).betas(...).weight_decay(...)` 改成任意 `Optimizer` 同义写法。
+* 用 `named_parameters(true)` 一行冻结 LoRA 之外的全部梯度。
+* 在推理段正确处理 `NoGradGuard` 与 `model->eval()`。
+
+完成 chapter01 的"前置知识练习"后，正式进入 chapter02。
